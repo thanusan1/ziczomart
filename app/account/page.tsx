@@ -1,27 +1,34 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import ProfileForm from "./profile-form";
 
 export const instant = false;
 
 export default async function AccountPage() {
   const supabase = await createClient();
 
-  // Verify the authenticated user on the server.
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser();
 
-  // Redirect unauthenticated users.
   if (error || !user) {
     redirect("/login");
   }
 
+  // Get the latest profile information from Supabase.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
   const fullName =
-    typeof user.user_metadata?.full_name === "string"
+    profile?.full_name ||
+    (typeof user.user_metadata?.full_name === "string"
       ? user.user_metadata.full_name
-      : "Customer";
+      : "Customer");
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -56,37 +63,42 @@ export default async function AccountPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-          {/* Personal Information */}
+          {/* Profile Management */}
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:col-span-2">
             <h2 className="text-xl font-bold text-gray-900">
-              Personal Information
+              Edit Personal Information
             </h2>
 
-            <div className="mt-6 space-y-5">
-              <div>
-                <p className="text-sm text-gray-500">Full Name</p>
-                <p className="mt-1 font-semibold text-gray-900">{fullName}</p>
-              </div>
+            <p className="mt-2 mb-6 text-sm text-gray-500">
+              Update your name and manage your account details.
+            </p>
 
-              <div>
-                <p className="text-sm text-gray-500">Email Address</p>
-                <p className="mt-1 font-semibold text-gray-900">
-                  {user.email ?? "Not available"}
-                </p>
-              </div>
+            <ProfileForm fullName={fullName} email={user.email ?? ""} />
 
-              <div>
-                <p className="text-sm text-gray-500">Account ID</p>
-                <p className="mt-1 break-all text-sm font-medium text-gray-700">
-                  {user.id}
-                </p>
-              </div>
+            <div className="mt-8 border-t border-gray-100 pt-6">
+              <h3 className="font-bold text-gray-900">Account Information</h3>
 
-              <div>
-                <p className="text-sm text-gray-500">Account Created</p>
-                <p className="mt-1 font-semibold text-gray-900">
-                  {new Date(user.created_at).toLocaleDateString("en-LK")}
-                </p>
+              <div className="mt-5 space-y-5">
+                <div>
+                  <p className="text-sm text-gray-500">Email Address</p>
+                  <p className="mt-1 font-semibold text-gray-900">
+                    {user.email ?? "Not available"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Account ID</p>
+                  <p className="mt-1 break-all text-sm font-medium text-gray-700">
+                    {user.id}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Account Created</p>
+                  <p className="mt-1 font-semibold text-gray-900">
+                    {new Date(user.created_at).toLocaleDateString("en-LK")}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -97,7 +109,7 @@ export default async function AccountPage() {
 
             <div className="mt-6 space-y-4">
               <Link
-                href="/orders"
+                href="/account/orders"
                 className="block rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
               >
                 My Orders
@@ -111,7 +123,7 @@ export default async function AccountPage() {
               </Link>
 
               <Link
-                href="/"
+                href="/products"
                 className="block rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
               >
                 Continue Shopping
