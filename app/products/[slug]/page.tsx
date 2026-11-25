@@ -50,9 +50,13 @@ export default async function ProductDetailsPage({ params }: Props) {
     (a, b) => a.sort_order - b.sort_order,
   );
 
-  const category = Array.isArray(product.categories)
-    ? product.categories[0]?.name
-    : product.categories?.name;
+  const categoriesData = product.categories as
+    | { name: string }
+    | { name: string }[]
+    | null;
+  const category = Array.isArray(categoriesData)
+    ? categoriesData[0]?.name
+    : categoriesData?.name;
 
   const price = Number(product.price);
   const comparePrice = Number(product.compare_at_price);

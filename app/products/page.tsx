@@ -72,9 +72,13 @@ export default async function ProductsPage() {
                     .getPublicUrl(image.storage_path).data.publicUrl
                 : null;
 
-              const category = Array.isArray(product.categories)
-                ? product.categories[0]?.name
-                : product.categories?.name;
+              const categoriesData = product.categories as
+                | { name: string }
+                | { name: string }[]
+                | null;
+              const category = Array.isArray(categoriesData)
+                ? categoriesData[0]?.name
+                : categoriesData?.name;
 
               return (
                 <Link
