@@ -26,19 +26,25 @@ export default function AddToCartButton({ productId, stockQuantity }: Props) {
     try {
       const supabase = createClient();
 
+      // Check whether the customer has an active session.
       const {
-        data: { user },
+        data: { session },
         error: authError,
-      } = await supabase.auth.getUser();
+      } = await supabase.auth.getSession();
 
       if (authError) {
         throw new Error(authError.message);
       }
 
-      if (!user) {
-        router.push("/login?next=/cart");
+      // Guests must log in before adding products.
+      if (!session) {
+        router.push(
+          `/login?next=${encodeURIComponent(window.location.pathname)}`,
+        );
         return;
       }
+
+      const user = session.user;
 
       // Find the customer's active cart.
       const { data: existingCart, error: cartError } = await supabase
