@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ProfileForm from "./profile-form";
+import { MapPin, Package, ShoppingCart, ShoppingBag } from "lucide-react";
 
 export const instant = false;
 
@@ -110,22 +111,33 @@ export default async function AccountPage() {
             <div className="mt-6 space-y-4">
               <Link
                 href="/account/orders"
-                className="block rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
+                className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
               >
+                <Package size={19} />
                 My Orders
               </Link>
 
               <Link
-                href="/cart"
-                className="block rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
+                href="/account/addresses"
+                className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
               >
+                <MapPin size={19} />
+                Saved Delivery Addresses
+              </Link>
+
+              <Link
+                href="/cart"
+                className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
+              >
+                <ShoppingCart size={19} />
                 My Cart
               </Link>
 
               <Link
                 href="/products"
-                className="block rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
+                className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 font-medium transition hover:border-orange-500 hover:text-orange-500"
               >
+                <ShoppingBag size={19} />
                 Continue Shopping
               </Link>
             </div>
