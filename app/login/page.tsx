@@ -32,7 +32,29 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/");
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setError("Unable to verify your account. Please log in again.");
+        await supabase.auth.signOut();
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        setError("Could not verify your account permissions.");
+        return;
+      }
+
+      router.replace(profile?.role === "admin" ? "/admin" : "/");
       router.refresh();
     } catch {
       setError("Unable to log in. Please try again.");
