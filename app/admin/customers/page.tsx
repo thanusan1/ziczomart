@@ -2,8 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Users, Phone, MapPin, ArrowLeft } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 export default async function AdminCustomersPage() {
   const supabase = await createClient();
 
