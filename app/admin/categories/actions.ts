@@ -45,6 +45,9 @@ export async function toggleCategoryStatus(formData: FormData) {
 
   revalidatePath("/admin/categories");
   revalidatePath("/admin/products/new");
+  revalidatePath("/");
+  revalidatePath("/categories");
+  revalidatePath("/products");
 }
 
 export async function deleteCategory(formData: FormData) {
@@ -65,4 +68,7 @@ export async function deleteCategory(formData: FormData) {
 
   revalidatePath("/admin/categories");
   revalidatePath("/admin/products/new");
+  revalidatePath("/");
+  revalidatePath("/categories");
+  revalidatePath("/products");
 }

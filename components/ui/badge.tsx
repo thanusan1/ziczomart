@@ -141,7 +141,7 @@ export function FeaturedBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md bg-orange-500 px-2 py-0.5 text-xs font-bold text-white",
+        "inline-flex items-center rounded-md bg-[#1049C6] px-2 py-0.5 text-xs font-bold text-white",
         className,
       )}
     >

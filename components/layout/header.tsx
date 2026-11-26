@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   ShoppingCart,
+  ShoppingBag,
   Search,
   Menu,
   X,
@@ -14,11 +15,21 @@ import {
   Package,
   MapPin,
   ChevronDown,
+  ChevronRight,
+  Truck,
+  Tag,
+  RefreshCw,
+  Flame,
+  LayoutGrid,
 } from "lucide-react";
 
-type CartCount = number;
+type CategoryNav = {
+  id: string;
+  name: string;
+  slug: string;
+};
 
-const NAV_LINKS = [
+const FALLBACK_NAV = [
   { label: "Home", href: "/" },
   { label: "Products", href: "/products" },
   { label: "Categories", href: "/categories" },
@@ -32,29 +43,37 @@ export default function Header() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [cartCount, setCartCount] = useState<CartCount>(0);
+  const [cartCount, setCartCount] = useState(0);
+  const [categories, setCategories] = useState<CategoryNav[]>([]);
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const searchRef = useRef<HTMLInputElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
+  const catRef = useRef<HTMLDivElement>(null);
 
-  /* ── Auth & Cart ──────────────────────────────────────── */
   useEffect(() => {
     const supabase = createClient();
 
     async function init() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const [{ data: sessionData }, { data: cats }] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase
+          .from("categories")
+          .select("id, name, slug")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true })
+          .limit(7),
+      ]);
 
-      if (session?.user) {
-        setEmail(session.user.email ?? null);
-        await loadProfileAndCart(supabase, session.user.id);
+      setCategories(cats ?? []);
+
+      if (sessionData.session?.user) {
+        setEmail(sessionData.session.user.email ?? null);
+        await loadProfileAndCart(supabase, sessionData.session.user.id);
       }
 
       setAuthLoading(false);
@@ -62,24 +81,27 @@ export default function Header() {
 
     init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (session?.user) {
-          setEmail(session.user.email ?? null);
-          await loadProfileAndCart(supabase, session.user.id);
-        } else {
-          setEmail(null);
-          setIsAdmin(false);
-          setCartCount(0);
-        }
-        setAuthLoading(false);
-      },
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setEmail(session.user.email ?? null);
+        await loadProfileAndCart(supabase, session.user.id);
+      } else {
+        setEmail(null);
+        setIsAdmin(false);
+        setCartCount(0);
+      }
+      setAuthLoading(false);
+    });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  async function loadProfileAndCart(supabase: ReturnType<typeof createClient>, userId: string) {
+  async function loadProfileAndCart(
+    supabase: ReturnType<typeof createClient>,
+    userId: string,
+  ) {
     const [{ data: profile }, { data: cart }] = await Promise.all([
       supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
       supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
@@ -98,35 +120,30 @@ export default function Header() {
     }
   }
 
-  /* ── Close mobile menu on route change ───────────────── */
   useEffect(() => {
     setMobileOpen(false);
-    setSearchOpen(false);
     setAccountOpen(false);
+    setCatOpen(false);
   }, [pathname]);
 
-  /* ── Close account dropdown on outside click ─────────── */
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
         setAccountOpen(false);
+      }
+      if (catRef.current && !catRef.current.contains(e.target as Node)) {
+        setCatOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  /* ── Focus search input when opened ──────────────────── */
-  useEffect(() => {
-    if (searchOpen) {
-      setTimeout(() => searchRef.current?.focus(), 50);
-    }
-  }, [searchOpen]);
-
-  /* ── Lock body scroll when mobile menu open ──────────── */
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [mobileOpen]);
 
   async function handleLogout() {
@@ -146,8 +163,8 @@ export default function Header() {
     e.preventDefault();
     if (searchQuery.trim()) {
       router.push(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
-      setSearchOpen(false);
-      setSearchQuery("");
+    } else {
+      router.push("/products");
     }
   }
 
@@ -158,89 +175,116 @@ export default function Header() {
 
   return (
     <>
-      {/* ── Announcement Bar ──────────────────────────────── */}
-      <div className="bg-gray-900 px-4 py-2 text-center text-xs font-medium text-gray-300 tracking-wide">
-        Free delivery on orders over Rs. 5,000 &nbsp;·&nbsp; Cash on Delivery available island-wide
+      {/* ── Top Royal Blue Announcement Bar ───────────────────────── */}
+      <div className="bg-[#0B46C6] text-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2 text-xs font-medium sm:px-6">
+          <div className="hidden items-center gap-8 md:flex">
+            <span className="inline-flex items-center gap-1.5">
+              <Truck size={13} className="text-blue-200" />
+              Free Delivery on Orders Over Rs. 5,000
+            </span>
+            <span className="text-blue-300/50">|</span>
+            <span className="inline-flex items-center gap-1.5">
+              <Tag size={13} className="text-blue-200" />
+              Up to 50% Off – Special Deals!
+            </span>
+            <span className="text-blue-300/50">|</span>
+            <span className="inline-flex items-center gap-1.5">
+              <RefreshCw size={13} className="text-blue-200" />
+              Easy Returns Within 30 Days
+            </span>
+          </div>
+          <div className="flex w-full items-center justify-center md:hidden">
+            <span className="inline-flex items-center gap-1.5 truncate">
+              <Truck size={13} className="flex-shrink-0 text-blue-200" />
+              Free Delivery on Orders Over Rs. 5,000 · Cash on Delivery
+            </span>
+          </div>
+          <Link
+            href="/products"
+            aria-label="Browse deals"
+            className="hidden items-center gap-0.5 text-blue-100 transition hover:text-white md:inline-flex"
+          >
+            <ChevronRight size={14} />
+          </Link>
+        </div>
       </div>
 
-      {/* ── Main Header ───────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-
+      {/* ── Main White Header ────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           {/* Logo */}
           <Link
             href="/"
-            className="flex-shrink-0 text-xl font-extrabold tracking-tight text-gray-900 sm:text-2xl"
+            className="flex flex-shrink-0 items-center gap-2.5"
           >
-            ZicZo<span className="text-orange-500">Mart</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1049C6] text-white shadow-sm">
+              <ShoppingBag size={19} />
+            </span>
+            <span className="text-xl font-extrabold tracking-tight text-[#0A1633] sm:text-2xl">
+              ZicZo<span className="text-[#1049C6]"> Mart</span>
+            </span>
           </Link>
 
-          {/* Desktop Nav */}
-          <nav className="hidden items-center gap-1 md:flex">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  isActive(link.href)
-                    ? "bg-orange-50 text-orange-600"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                }`}
+          {/* Desktop Center Search Bar */}
+          <form
+            onSubmit={handleSearch}
+            className="hidden max-w-xl flex-1 md:flex"
+          >
+            <div className="flex w-full overflow-hidden rounded-lg border border-gray-300 bg-white transition focus-within:border-[#1049C6] focus-within:ring-2 focus-within:ring-blue-100">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search for products..."
+                aria-label="Search for products"
+                className="flex-1 bg-transparent px-4 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+              />
+              <button
+                type="submit"
+                aria-label="Search"
+                className="flex items-center justify-center bg-[#1049C6] px-4 text-white transition hover:bg-[#0B3BA8]"
               >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+                <Search size={17} />
+              </button>
+            </div>
+          </form>
 
           {/* Right Actions */}
-          <div className="flex items-center gap-1 sm:gap-2">
-            {/* Search */}
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              aria-label="Search products"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
-            >
-              <Search size={19} />
-            </button>
-
+          <div className="flex items-center gap-2 sm:gap-4">
             {/* Account */}
-            {!authLoading && (
-              email ? (
+            {!authLoading &&
+              (email ? (
                 <div className="relative" ref={accountRef}>
                   <button
                     type="button"
                     onClick={() => setAccountOpen((v) => !v)}
                     aria-label="Account menu"
-                    className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 sm:flex"
+                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-[#1049C6]"
                   >
-                    <User size={16} />
-                    <span className="max-w-24 truncate">Account</span>
-                    <ChevronDown size={14} className={`transition-transform ${accountOpen ? "rotate-180" : ""}`} />
+                    <User size={18} className="text-gray-600" />
+                    <span className="hidden sm:inline">Account</span>
+                    <ChevronDown
+                      size={14}
+                      className={`hidden transition-transform sm:block ${
+                        accountOpen ? "rotate-180" : ""
+                      }`}
+                    />
                   </button>
 
-                  {/* Mobile account icon */}
-                  <button
-                    type="button"
-                    onClick={() => setAccountOpen((v) => !v)}
-                    aria-label="Account menu"
-                    className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 sm:hidden"
-                  >
-                    <User size={19} />
-                  </button>
-
-                  {/* Account Dropdown */}
                   {accountOpen && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
                       <div className="border-b border-gray-100 px-4 py-3">
                         <p className="text-xs text-gray-500">Signed in as</p>
-                        <p className="mt-0.5 truncate text-sm font-semibold text-gray-900">{email}</p>
+                        <p className="mt-0.5 truncate text-sm font-semibold text-gray-900">
+                          {email}
+                        </p>
                       </div>
                       <div className="py-1">
                         {isAdmin && (
                           <Link
                             href="/admin"
-                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-orange-600 hover:bg-orange-50"
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#1049C6] hover:bg-blue-50"
                           >
                             <Package size={15} /> Admin Dashboard
                           </Link>
@@ -282,32 +326,44 @@ export default function Header() {
                 <div className="hidden items-center gap-2 sm:flex">
                   <Link
                     href="/login"
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-[#1049C6]"
                   >
-                    Login
+                    <User size={17} />
+                    <span>Login</span>
                   </Link>
                   <Link
                     href="/register"
-                    className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-700"
+                    className="rounded-lg bg-[#1049C6] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0B3BA8]"
                   >
                     Register
                   </Link>
                 </div>
-              )
-            )}
+              ))}
+
+            {/* Orders quick link (desktop) */}
+            <Link
+              href="/account/orders"
+              className="hidden items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-[#1049C6] lg:flex"
+            >
+              <Package size={18} className="text-gray-600" />
+              <span>Orders</span>
+            </Link>
 
             {/* Cart */}
             <Link
               href="/cart"
               aria-label={`Shopping cart${cartCount > 0 ? `, ${cartCount} items` : ""}`}
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+              className="relative flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-[#1049C6]"
             >
-              <ShoppingCart size={19} />
-              {cartCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white">
-                  {cartCount > 9 ? "9+" : cartCount}
-                </span>
-              )}
+              <div className="relative">
+                <ShoppingCart size={20} className="text-gray-700" />
+                {cartCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                    {cartCount > 9 ? "9+" : cartCount}
+                  </span>
+                )}
+              </div>
+              <span className="hidden sm:inline">Cart</span>
             </Link>
 
             {/* Mobile Menu Toggle */}
@@ -315,58 +371,140 @@ export default function Header() {
               type="button"
               onClick={() => setMobileOpen((v) => !v)}
               aria-label="Toggle mobile menu"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 md:hidden"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 md:hidden"
             >
-              {mobileOpen ? <X size={19} /> : <Menu size={19} />}
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
+          </div>
+        </div>
+
+        {/* Mobile Search Bar */}
+        <div className="border-t border-gray-100 px-4 py-2.5 md:hidden">
+          <form onSubmit={handleSearch} className="flex w-full overflow-hidden rounded-lg border border-gray-300 bg-gray-50">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search for products..."
+              aria-label="Search for products"
+              className="flex-1 bg-transparent px-3 py-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+            />
+            <button
+              type="submit"
+              aria-label="Search"
+              className="flex items-center justify-center bg-[#1049C6] px-3.5 text-white"
+            >
+              <Search size={16} />
+            </button>
+          </form>
+        </div>
+
+        {/* ── Secondary Category Navigation Bar (Desktop) ─────────── */}
+        <div className="hidden border-t border-gray-100 bg-white md:block">
+          <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-2 sm:px-6">
+            {/* All Categories Dropdown */}
+            <div className="relative" ref={catRef}>
+              <button
+                type="button"
+                onClick={() => setCatOpen((v) => !v)}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#1049C6] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#0B3BA8]"
+              >
+                <Menu size={14} />
+                All Categories
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform ${catOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {catOpen && (
+                <div className="absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-lg">
+                  <Link
+                    href="/categories"
+                    className="flex items-center gap-2.5 border-b border-gray-100 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-[#1049C6] hover:bg-blue-50"
+                  >
+                    <LayoutGrid size={14} /> Browse All Categories
+                  </Link>
+                  {categories.map((cat) => (
+                    <Link
+                      key={cat.id}
+                      href={`/products?category=${cat.slug}`}
+                      className="block px-4 py-2 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-[#1049C6]"
+                    >
+                      {cat.name}
+                    </Link>
+                  ))}
+                  {categories.length === 0 && (
+                    <p className="px-4 py-3 text-xs text-gray-400">
+                      No categories yet
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Horizontal Nav Links */}
+            <nav className="flex flex-1 items-center gap-5 overflow-x-auto text-[13px] font-medium text-gray-700">
+              {categories.length > 0 ? (
+                <>
+                  {categories.slice(0, 6).map((cat) => (
+                    <Link
+                      key={cat.id}
+                      href={`/products?category=${cat.slug}`}
+                      className="whitespace-nowrap transition hover:text-[#1049C6]"
+                    >
+                      {cat.name}
+                    </Link>
+                  ))}
+                </>
+              ) : (
+                FALLBACK_NAV.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`whitespace-nowrap transition hover:text-[#1049C6] ${
+                      isActive(link.href) ? "font-semibold text-[#1049C6]" : ""
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                ))
+              )}
+
+              <Link
+                href="/products"
+                className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-[#0A1633] transition hover:text-[#1049C6]"
+              >
+                <Flame size={14} className="text-red-500" />
+                Deals
+              </Link>
+              <Link
+                href="/about"
+                className="whitespace-nowrap text-gray-500 transition hover:text-[#1049C6]"
+              >
+                About
+              </Link>
+            </nav>
           </div>
         </div>
       </header>
 
-      {/* ── Search Overlay ────────────────────────────────── */}
-      {searchOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pt-20"
-          onClick={(e) => { if (e.target === e.currentTarget) setSearchOpen(false); }}
-        >
-          <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <form onSubmit={handleSearch} className="flex items-center gap-3 p-4">
-              <Search size={20} className="flex-shrink-0 text-gray-400" />
-              <input
-                ref={searchRef}
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products…"
-                className="flex-1 bg-transparent text-base text-gray-900 outline-none placeholder:text-gray-400"
-              />
-              <button
-                type="button"
-                onClick={() => setSearchOpen(false)}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X size={16} />
-              </button>
-            </form>
-            <div className="border-t border-gray-100 px-4 pb-3 pt-2 text-xs text-gray-400">
-              Press Enter to search · Esc to close
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Mobile Menu ───────────────────────────────────── */}
+      {/* ── Mobile Slide-In Menu ────────────────────────────────── */}
       {mobileOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/30 md:hidden"
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
             onClick={() => setMobileOpen(false)}
           />
           <div className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white shadow-2xl md:hidden">
-            {/* Mobile Menu Header */}
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-              <Link href="/" className="text-xl font-extrabold tracking-tight">
-                ZicZo<span className="text-orange-500">Mart</span>
+              <Link href="/" className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1049C6] text-white">
+                  <ShoppingBag size={16} />
+                </span>
+                <span className="text-lg font-extrabold text-[#0A1633]">
+                  ZicZo<span className="text-[#1049C6]"> Mart</span>
+                </span>
               </Link>
               <button
                 type="button"
@@ -377,18 +515,17 @@ export default function Header() {
               </button>
             </div>
 
-            {/* Mobile Nav Links */}
             <nav className="flex-1 overflow-y-auto px-4 py-4">
               <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
-                Navigation
+                Shop
               </p>
-              {NAV_LINKS.map((link) => (
+              {FALLBACK_NAV.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`flex items-center rounded-xl px-3 py-3 text-sm font-medium transition-colors mb-1 ${
+                  className={`mb-1 flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                     isActive(link.href)
-                      ? "bg-orange-50 text-orange-600"
+                      ? "bg-blue-50 text-[#1049C6]"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
@@ -396,10 +533,25 @@ export default function Header() {
                 </Link>
               ))}
 
-              {/* Divider */}
+              {categories.length > 0 && (
+                <>
+                  <p className="mb-2 mt-4 px-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
+                    Categories
+                  </p>
+                  {categories.map((cat) => (
+                    <Link
+                      key={cat.id}
+                      href={`/products?category=${cat.slug}`}
+                      className="mb-1 flex items-center rounded-xl px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                    >
+                      {cat.name}
+                    </Link>
+                  ))}
+                </>
+              )}
+
               <div className="my-4 border-t border-gray-100" />
 
-              {/* Auth Section */}
               <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
                 Account
               </p>
@@ -407,27 +559,41 @@ export default function Header() {
                 <>
                   <div className="mb-3 rounded-xl bg-gray-50 px-3 py-2.5">
                     <p className="text-xs text-gray-500">Signed in as</p>
-                    <p className="mt-0.5 truncate text-sm font-semibold text-gray-900">{email}</p>
+                    <p className="mt-0.5 truncate text-sm font-semibold text-gray-900">
+                      {email}
+                    </p>
                   </div>
                   {isAdmin && (
-                    <Link href="/admin" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-orange-600 hover:bg-orange-50 mb-1">
+                    <Link
+                      href="/admin"
+                      className="mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-[#1049C6] hover:bg-blue-50"
+                    >
                       <Package size={15} /> Admin Dashboard
                     </Link>
                   )}
-                  <Link href="/account" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 mb-1">
+                  <Link
+                    href="/account"
+                    className="mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
                     <User size={15} /> My Account
                   </Link>
-                  <Link href="/account/orders" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 mb-1">
+                  <Link
+                    href="/account/orders"
+                    className="mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
                     <Package size={15} /> My Orders
                   </Link>
-                  <Link href="/account/addresses" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 mb-1">
+                  <Link
+                    href="/account/addresses"
+                    className="mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
                     <MapPin size={15} /> Saved Addresses
                   </Link>
                   <button
                     type="button"
                     onClick={handleLogout}
                     disabled={loggingOut}
-                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                   >
                     <LogOut size={15} />
                     {loggingOut ? "Signing out…" : "Sign Out"}
@@ -437,13 +603,13 @@ export default function Header() {
                 <div className="space-y-2">
                   <Link
                     href="/login"
-                    className="flex items-center justify-center rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+                    className="flex items-center justify-center rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                   >
                     Login
                   </Link>
                   <Link
                     href="/register"
-                    className="flex items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-600"
+                    className="flex items-center justify-center rounded-xl bg-[#1049C6] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0B3BA8]"
                   >
                     Create Account
                   </Link>
@@ -451,16 +617,15 @@ export default function Header() {
               )}
             </nav>
 
-            {/* Mobile Cart CTA */}
             <div className="border-t border-gray-100 p-4">
               <Link
                 href="/cart"
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-gray-700"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0A1633] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1049C6]"
               >
                 <ShoppingCart size={17} />
                 View Cart
                 {cartCount > 0 && (
-                  <span className="ml-1 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold">
+                  <span className="ml-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold">
                     {cartCount}
                   </span>
                 )}

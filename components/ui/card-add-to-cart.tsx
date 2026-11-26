@@ -96,10 +96,10 @@ export default function CardAddToCart({ productId, stockQuantity, slug }: Props)
         type="button"
         onClick={handleAdd}
         disabled={loading || added}
-        className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all duration-200 disabled:cursor-not-allowed ${
+        className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 disabled:cursor-not-allowed ${
           added
-            ? "bg-green-500 text-white"
-            : "bg-orange-500 text-white hover:bg-orange-600"
+            ? "bg-emerald-600 text-white"
+            : "bg-[#1049C6] text-white hover:bg-[#0B3BA8]"
         } disabled:opacity-80`}
       >
         {loading ? (

@@ -6,15 +6,15 @@
 
 /* Brand CSS Variables */
 :root {
-  --brand-orange: #f97316;
-  --brand-orange-dark: #ea6c0a;
-  --brand-black: #0a0a0a;
+  --brand-primary: #1049c6;
+  --brand-primary-dark: #0b3ba8;
+  --brand-navy: #0a1633;
   --brand-white: #ffffff;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-muted: #9ca3af;
-  --border-default: #e5e7eb;
-  --bg-page: #f9fafb;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-default: #e2e8f0;
+  --bg-page: #f8fafc;
   --bg-card: #ffffff;
 }
 
@@ -53,7 +53,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Focus Styles — Accessible */
 *:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
 }
 
@@ -65,7 +65,7 @@ img {
 
 /* Selection Color */
 ::selection {
-  background: #fed7aa;
+  background: #dbeafe;
   color: var(--text-primary);
 }
 
