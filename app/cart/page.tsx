@@ -20,6 +20,8 @@ export const metadata = {
   description: "Review your selected products before checkout.",
 };
 
+export const instant = false;
+
 export default async function CartPage() {
   const supabase = await createClient();
 

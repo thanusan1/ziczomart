@@ -13,6 +13,8 @@ export const metadata = {
   description: "Complete your ZicZo Mart order.",
 };
 
+export const instant = false;
+
 export default async function CheckoutPage() {
   const supabase = await createClient();
 

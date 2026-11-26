@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
@@ -134,9 +134,23 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-5 text-center text-sm text-gray-500">
-          <Link href="/" className="hover:text-orange-500">← Back to store</Link>
+          <Link href="/" className="hover:text-[#1049C6]">← Back to store</Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-gray-50">
+          <Loader2 size={24} className="animate-spin text-[#1049C6]" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

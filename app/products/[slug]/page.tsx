@@ -10,6 +10,8 @@ import { formatPrice } from "@/lib/utils";
 import AddToCartButton from "./add-to-cart-button";
 import { Package, Tag, ArrowLeft } from "lucide-react";
 
+export const instant = false;
+
 type Props = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Props) {

@@ -36,6 +36,8 @@ function resolveCategory(raw: unknown): string | null {
 }
 
 /* ── Page ────────────────────────────────────────────────── */
+export const instant = false;
+
 export default async function ProductsPage({ searchParams }: Props) {
   const { q = "", category = "", sort = "", featured = "" } = await searchParams;
 

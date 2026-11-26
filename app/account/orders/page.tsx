@@ -18,6 +18,8 @@ export const metadata = {
   description: "View and track your ZicZo Mart orders.",
 };
 
+export const instant = false;
+
 export default async function MyOrdersPage() {
   const supabase = await createClient();
 

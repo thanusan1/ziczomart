@@ -22,6 +22,8 @@ export const metadata = {
   description: "Manage your ZicZo Mart account.",
 };
 
+export const instant = false;
+
 export default async function AccountPage() {
   const supabase = await createClient();
 

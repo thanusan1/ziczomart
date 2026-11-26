@@ -17,6 +17,8 @@ import {
   ShoppingBag,
 } from "lucide-react";
 
+export const instant = false;
+
 type Props = {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ placed?: string }>;

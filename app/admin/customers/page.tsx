@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { Users, Phone } from "lucide-react";
 
+export const instant = false;
+
 export default async function AdminCustomersPage() {
   const supabase = await createClient();
 

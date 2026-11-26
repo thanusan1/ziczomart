@@ -6,6 +6,8 @@ import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
 import AddressForm from "../address-form";
 
+export const instant = false;
+
 export default async function NewAddressPage() {
   const supabase = await createClient();
 

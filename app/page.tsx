@@ -23,6 +23,8 @@ import {
   Globe,
 } from "lucide-react";
 
+export const instant = false;
+
 export const metadata = {
   title: "ZicZo Mart — Everything You Love. All in One Place.",
   description:

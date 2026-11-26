@@ -13,6 +13,8 @@ import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
 import AddressList from "./address-list";
 
+export const instant = false;
+
 export default async function AddressesPage() {
   const supabase = await createClient();
 

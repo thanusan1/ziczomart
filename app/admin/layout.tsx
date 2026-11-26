@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import AdminNav from "@/components/layout/admin-nav";
 import { ExternalLink } from "lucide-react";
 
+export const instant = false;
+
 export default async function AdminLayout({
   children,
 }: Readonly<{
