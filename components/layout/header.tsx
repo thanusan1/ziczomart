@@ -35,6 +35,11 @@ type CategoryNav = {
   slug: string;
 };
 
+let cachedHeaderCategories: CategoryNav[] | null = null;
+let cachedHeaderSettings: StoreSettings | null = null;
+let headerCacheTimestamp = 0;
+const HEADER_CACHE_TTL_MS = 60_000;
+
 function getCategoryHref(cat: CategoryNav): string {
   const lowerName = cat.name.toLowerCase();
   const lowerSlug = cat.slug.toLowerCase();
@@ -68,9 +73,11 @@ export default function Header() {
   const [authLoading, setAuthLoading] = useState(true);
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
-  const [categories, setCategories] = useState<CategoryNav[]>([]);
+  const [categories, setCategories] = useState<CategoryNav[]>(
+    () => cachedHeaderCategories ?? [],
+  );
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(
-    DEFAULT_STORE_SETTINGS,
+    () => cachedHeaderSettings ?? DEFAULT_STORE_SETTINGS,
   );
 
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -86,23 +93,40 @@ export default function Header() {
     const supabase = createClient();
 
     async function init() {
-      const [{ data: sessionData }, { data: cats }, { settings }] =
+      const now = Date.now();
+      const cacheValid =
+        cachedHeaderCategories !== null &&
+        cachedHeaderSettings !== null &&
+        now - headerCacheTimestamp < HEADER_CACHE_TTL_MS;
+
+      const [{ data: sessionData }, catsResult, settingsResult] =
         await Promise.all([
           supabase.auth.getSession(),
-          supabase
-            .from("categories")
-            .select("*")
-            .eq("is_active", true)
-            .order("sort_order", { ascending: true }),
-          getStoreSettings(supabase),
+          cacheValid
+            ? Promise.resolve({ data: null })
+            : supabase
+                .from("categories")
+                .select("*")
+                .eq("is_active", true)
+                .order("sort_order", { ascending: true }),
+          cacheValid
+            ? Promise.resolve({ settings: cachedHeaderSettings! })
+            : getStoreSettings(supabase),
         ]);
 
-      setStoreSettings(settings);
+      if (!cacheValid) {
+        const topLevelCats = (
+          (catsResult.data ?? []) as (CategoryNav & {
+            parent_id?: string | null;
+          })[]
+        ).filter((c) => !c.parent_id);
 
-      const topLevelCats = ((cats ?? []) as (CategoryNav & { parent_id?: string | null })[]).filter(
-        (c) => !c.parent_id,
-      );
-      setCategories(topLevelCats);
+        cachedHeaderCategories = topLevelCats;
+        cachedHeaderSettings = settingsResult.settings;
+        headerCacheTimestamp = Date.now();
+        setCategories(topLevelCats);
+        setStoreSettings(settingsResult.settings);
+      }
 
       if (sessionData.session?.user) {
         setEmail(sessionData.session.user.email ?? null);

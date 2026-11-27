@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   Search,
@@ -91,6 +91,7 @@ export default function CategorySidebarFilters({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const currentQ = searchParams.get("q") ?? "";
   const currentSub = activeSubSlug ?? (searchParams.get("sub") ?? "");
@@ -141,7 +142,9 @@ export default function CategorySidebarFilters({
   );
 
   function pushFilter(overrides: Record<string, string>) {
-    router.push(buildUrl(overrides), { scroll: false });
+    startTransition(() => {
+      router.push(buildUrl(overrides), { scroll: false });
+    });
   }
 
   function handleSelectCategory(slug: string) {
@@ -151,7 +154,9 @@ export default function CategorySidebarFilters({
       params.delete("sub");
       const qs = params.toString();
       const targetPath = slug ? `${baseCategoryPath}/${slug}` : baseCategoryPath;
-      router.push(qs ? `${targetPath}?${qs}` : targetPath, { scroll: false });
+      startTransition(() => {
+        router.push(qs ? `${targetPath}?${qs}` : targetPath, { scroll: false });
+      });
       onCloseMobile?.();
       return;
     }
@@ -221,7 +226,11 @@ export default function CategorySidebarFilters({
   const allLabel = allCategoryLabel ?? `All ${categoryTitle}`;
 
   return (
-    <div className="space-y-4">
+    <div
+      className={`space-y-4 transition-opacity duration-150 ${
+        isPending ? "opacity-60 pointer-events-none" : ""
+      }`}
+    >
       {/* ── 1. CATEGORIES ────────────────────────────────────────── */}
       <FilterSection title="Categories">
         <nav aria-label={`${categoryTitle} subcategories`} className="space-y-1">
@@ -644,6 +653,7 @@ export function CategoryMobileFilterBar(props: CategorySidebarFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const currentSort = searchParams.get("sort") ?? "";
