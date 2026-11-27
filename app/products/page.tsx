@@ -14,6 +14,14 @@ import ProductFilters, {
   type FilterCategory,
 } from "@/components/ui/product-filters";
 import ProductsListingClient from "@/components/products/products-listing-client";
+import SpecialDealsView, {
+  type DealCategoryTab,
+  type DealProductItem,
+} from "@/components/deals/special-deals-view";
+import {
+  getActiveDealsWithProducts,
+  resolveProductDealPricing,
+} from "@/lib/deals";
 import { ProductGridSkeleton } from "@/components/ui/skeleton";
 import { SlidersHorizontal, ShoppingBag, RotateCcw } from "lucide-react";
 
@@ -90,6 +98,7 @@ export default async function ProductsPage({ searchParams }: Props) {
     { data: categoriesRaw },
     { data: productStatsRaw },
     { data: reviewsRaw },
+    { activeDeals, productDealMap },
   ] = await Promise.all([
     supabase
       .from("categories")
@@ -104,6 +113,7 @@ export default async function ProductsPage({ searchParams }: Props) {
       .from("reviews")
       .select("product_id, rating")
       .eq("is_published", true),
+    getActiveDealsWithProducts(supabase),
   ]);
 
   /* Compute accurate category counts, stock counts, and price bounds */
@@ -168,6 +178,112 @@ export default async function ProductsPage({ searchParams }: Props) {
       sum: prev.sum + Number(rev.rating),
       count: prev.count + 1,
     });
+  }
+
+  /* ── Dedicated Customer Special Deals Page (/products?deals=true) ── */
+  if (deals === "true") {
+    const dealProductIds = Array.from(productDealMap.keys());
+    const catById = new Map(allActiveCategories.map((c) => [c.id, c]));
+
+    let dealProducts: DealProductItem[] = [];
+    if (dealProductIds.length > 0) {
+      const { data: dealProdRaw } = await supabase
+        .from("products")
+        .select(
+          `id, category_id, name, slug, description, price, compare_at_price,
+           stock_quantity, is_featured, created_at,
+           product_images(storage_path, sort_order),
+           categories(name, slug)`,
+        )
+        .eq("is_active", true)
+        .in("id", dealProductIds);
+
+      dealProducts = (dealProdRaw ?? [])
+        .map((p): DealProductItem | null => {
+          const deal = productDealMap.get(p.id);
+          if (!deal) return null;
+
+          const pricing = resolveProductDealPricing(
+            Number(p.price),
+            p.compare_at_price ? Number(p.compare_at_price) : null,
+            deal,
+          );
+          if (!pricing.hasActiveDeal) return null;
+
+          const imgs = [...(p.product_images ?? [])].sort(
+            (a, b) => a.sort_order - b.sort_order,
+          );
+          const cat = resolveCategory(p.categories);
+          const rev = ratingAgg.get(p.id);
+          const avgRating = rev && rev.count > 0 ? rev.sum / rev.count : null;
+
+          const assignedCat = p.category_id ? catById.get(p.category_id) : null;
+          const mainCat = assignedCat?.parent_id
+            ? catById.get(assignedCat.parent_id) ?? assignedCat
+            : assignedCat;
+
+          return {
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            description: p.description ?? null,
+            price: pricing.effectivePrice,
+            compare_at_price: pricing.effectiveCompareAt,
+            stock_quantity: p.stock_quantity,
+            is_featured: p.is_featured,
+            imageUrl: imgs[0] ? getImageUrl(supabase, imgs[0].storage_path) : null,
+            category: cat.name,
+            categorySlug: cat.slug,
+            rating: avgRating,
+            reviewCount: rev?.count ?? 0,
+            dealId: deal.dealId,
+            dealName: deal.dealName,
+            dealEndAt: deal.endAt,
+            isFeaturedDeal: deal.isFeatured,
+            displayPriority: deal.displayPriority,
+            createdAt: p.created_at,
+            categoryId: mainCat?.id ?? null,
+          };
+        })
+        .filter((x): x is DealProductItem => x !== null);
+    }
+
+    const dealCatCount = new Map<string, number>();
+    for (const dp of dealProducts) {
+      if (dp.categoryId) {
+        dealCatCount.set(dp.categoryId, (dealCatCount.get(dp.categoryId) ?? 0) + 1);
+      }
+    }
+
+    const dealCategories: DealCategoryTab[] = mainActiveCategories
+      .filter((c) => (dealCatCount.get(c.id) ?? 0) > 0)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        count: dealCatCount.get(c.id) ?? 0,
+      }));
+
+    const featuredCampaign =
+      activeDeals.find((d) => d.banner_url && d.is_featured) ??
+      activeDeals.find((d) => d.banner_url) ??
+      activeDeals[0] ??
+      null;
+
+    return (
+      <>
+        <Header />
+        <SpecialDealsView
+          heroTitle="Special Deals"
+          heroSubtitle="Limited-time discounts and unbeatable savings."
+          heroBannerUrl={featuredCampaign?.banner_url ?? null}
+          products={dealProducts}
+          categories={dealCategories}
+        />
+        <TrustStrip />
+        <Footer />
+      </>
+    );
   }
 
   /* ── 2. Optional wishlist filter (requires authenticated user) ─ */
@@ -313,13 +429,19 @@ export default async function ProductsPage({ searchParams }: Props) {
     const rev = ratingAgg.get(p.id);
     const avgRating = rev && rev.count > 0 ? rev.sum / rev.count : null;
 
+    const pricing = resolveProductDealPricing(
+      Number(p.price),
+      p.compare_at_price ? Number(p.compare_at_price) : null,
+      productDealMap.get(p.id),
+    );
+
     return {
       id: p.id,
       name: p.name,
       slug: p.slug,
       description: p.description ?? null,
-      price: Number(p.price),
-      compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : null,
+      price: pricing.effectivePrice,
+      compare_at_price: pricing.effectiveCompareAt,
       stock_quantity: p.stock_quantity,
       is_featured: p.is_featured,
       imageUrl: imgs[0] ? getImageUrl(supabase, imgs[0].storage_path) : null,

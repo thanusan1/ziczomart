@@ -2,6 +2,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { getStoreSettings } from "@/lib/store-settings";
+import {
+  getActiveDealsWithProducts,
+  resolveProductDealPricing,
+  type ActiveProductDeal,
+} from "@/lib/deals";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import ProductCard, { type ProductCardData } from "@/components/ui/product-card";
@@ -66,16 +71,22 @@ type RawProduct = {
 function mapProduct(
   supabase: Awaited<ReturnType<typeof createClient>>,
   p: RawProduct,
+  dealMap?: Map<string, ActiveProductDeal>,
 ): ProductCardData {
   const imgs = [...(p.product_images ?? [])].sort(
     (a, b) => a.sort_order - b.sort_order,
+  );
+  const pricing = resolveProductDealPricing(
+    Number(p.price),
+    p.compare_at_price ? Number(p.compare_at_price) : null,
+    dealMap?.get(p.id),
   );
   return {
     id: p.id,
     name: p.name,
     slug: p.slug,
-    price: Number(p.price),
-    compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : null,
+    price: pricing.effectivePrice,
+    compare_at_price: pricing.effectiveCompareAt,
     stock_quantity: p.stock_quantity,
     is_featured: Boolean(p.is_featured),
     imageUrl: imgs[0] ? getImageUrl(supabase, imgs[0].storage_path) : null,
@@ -109,6 +120,7 @@ export default async function HomePage() {
     { data: newArrivalsRaw },
     { data: pinnedRaw },
     { settings: storeSettings },
+    { productDealMap },
   ] = await Promise.all([
     supabase
       .from("categories")
@@ -163,6 +175,7 @@ export default async function HomePage() {
       .order("created_at", { ascending: false }),
 
     getStoreSettings(supabase),
+    getActiveDealsWithProducts(supabase),
   ]);
 
   const categories = dedupeById(
@@ -189,20 +202,30 @@ export default async function HomePage() {
     (p) => "is_best_deal" in (p as Record<string, unknown>),
   );
 
-  /* Today's Best Deals: only products with is_best_deal = true (when column exists), else discounted active products */
-  const dealsProducts = dedupeById(
-    (hasBestDealCol
-      ? allFetchedProducts
-          .filter((p) => Boolean((p as RawProduct).is_best_deal))
-          .map((p) => mapProduct(supabase, p as RawProduct))
-      : (dealsRaw ?? [])
-          .map((p) => mapProduct(supabase, p as RawProduct))
-          .filter(
-            (p) =>
-              p.compare_at_price != null &&
-              Number(p.compare_at_price) > Number(p.price),
-          )),
-  );
+  /* Today's Best Deals: prioritize active homepage Special Deals campaigns, then is_best_deal / discounted */
+  const homepageDealProducts = allFetchedProducts
+    .filter((p) => {
+      const d = productDealMap.get(p.id);
+      return d && d.showOnHomepage;
+    })
+    .map((p) => mapProduct(supabase, p as RawProduct, productDealMap));
+
+  const legacyDealsProducts = (hasBestDealCol
+    ? allFetchedProducts
+        .filter((p) => Boolean((p as RawProduct).is_best_deal))
+        .map((p) => mapProduct(supabase, p as RawProduct, productDealMap))
+    : (dealsRaw ?? [])
+        .map((p) => mapProduct(supabase, p as RawProduct, productDealMap))
+        .filter(
+          (p) =>
+            p.compare_at_price != null &&
+            Number(p.compare_at_price) > Number(p.price),
+        ));
+
+  const dealsProducts = dedupeById([
+    ...homepageDealProducts,
+    ...legacyDealsProducts,
+  ]);
   const dealSlots = buildSlots(dealsProducts, 5);
 
   /* Featured Products: is_featured = true, exactly 5 slots */

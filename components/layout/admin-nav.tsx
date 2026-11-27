@@ -12,6 +12,7 @@ import {
   Users,
   Megaphone,
   Star,
+  Flame,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
     exact: false,
   },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, exact: false },
+  { href: "/admin/special-deals", label: "Special Deals", icon: Flame, exact: false },
   { href: "/admin/reviews", label: "Reviews", icon: Star, exact: false },
   { href: "/admin/customers", label: "Customers", icon: Users, exact: false },
   { href: "/admin/settings", label: "Promotions", icon: Megaphone, exact: false },

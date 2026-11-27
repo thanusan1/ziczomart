@@ -6,6 +6,10 @@ import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
 import CheckoutForm from "./checkout-form";
 import { formatPrice } from "@/lib/utils";
+import {
+  getActiveDealsWithProducts,
+  resolveProductDealPricing,
+} from "@/lib/deals";
 import { ShoppingBag, ArrowLeft, AlertCircle } from "lucide-react";
 
 export const metadata = {
@@ -32,24 +36,52 @@ export default async function CheckoutPage() {
 
   if (!cart) redirect("/cart");
 
-  const { data: items, error } = await supabase
-    .from("cart_items")
-    .select(
-      `id, quantity,
-       products(id, name, price, stock_quantity, is_active)`,
-    )
-    .eq("cart_id", cart.id);
+  const [{ data: items, error }, { productDealMap }] = await Promise.all([
+    supabase
+      .from("cart_items")
+      .select(
+        `id, quantity,
+         products(id, name, price, compare_at_price, stock_quantity, is_active)`,
+      )
+      .eq("cart_id", cart.id),
+    getActiveDealsWithProducts(supabase),
+  ]);
 
   if (error) throw new Error(error.message);
 
-  const validItems = (items ?? [])
-    .map((item: any) => {
+  type RawCheckoutProduct = {
+    id: string;
+    name: string;
+    price: number | string;
+    compare_at_price: number | string | null;
+    stock_quantity: number;
+    is_active: boolean;
+  };
+
+  type RawCheckoutItem = {
+    id: string;
+    quantity: number;
+    products: RawCheckoutProduct | RawCheckoutProduct[] | null;
+  };
+
+  const validItems = ((items ?? []) as RawCheckoutItem[])
+    .map((item) => {
       const product = Array.isArray(item.products)
         ? item.products[0]
         : item.products;
-      return { id: item.id, quantity: item.quantity, product };
+      if (!product) return { id: item.id, quantity: item.quantity, product };
+      const pricing = resolveProductDealPricing(
+        Number(product.price),
+        product.compare_at_price ? Number(product.compare_at_price) : null,
+        productDealMap.get(product.id),
+      );
+      return {
+        id: item.id,
+        quantity: item.quantity,
+        product: { ...product, price: pricing.effectivePrice },
+      };
     })
-    .filter((item) => item.product);
+    .filter((item): item is { id: string; quantity: number; product: RawCheckoutProduct & { price: number } } => Boolean(item.product));
 
   if (validItems.length === 0) redirect("/cart");
 

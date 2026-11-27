@@ -19,6 +19,10 @@ import {
   fetchPublicProductReviews,
   getProductReviewEligibility,
 } from "@/lib/reviews";
+import {
+  getActiveDealsWithProducts,
+  resolveProductDealPricing,
+} from "@/lib/deals";
 import { discountPercent } from "@/lib/utils";
 
 export const instant = false;
@@ -136,11 +140,12 @@ export default async function ProductDetailsPage({ params }: Props) {
     notFound();
   }
 
-  /* ── 2. Fetch categories hierarchy, public reviews, user & store settings ── */
+  /* ── 2. Fetch categories hierarchy, public reviews, user, deals & settings ── */
   const [
     { data: allCategories },
     reviews,
     { settings },
+    { productDealMap },
     {
       data: { user },
     },
@@ -151,6 +156,7 @@ export default async function ProductDetailsPage({ params }: Props) {
       .eq("is_active", true),
     fetchPublicProductReviews(supabase, product.id),
     getStoreSettings(supabase),
+    getActiveDealsWithProducts(supabase),
     supabase.auth.getUser(),
   ]);
 
@@ -202,10 +208,17 @@ export default async function ProductDetailsPage({ params }: Props) {
     alt: img.alt_text?.trim() || `${product.name} - Image ${idx + 1}`,
   }));
 
-  const price = Number(product.price);
-  const compareAtPrice = product.compare_at_price
+  const rawPrice = Number(product.price);
+  const rawCompareAt = product.compare_at_price
     ? Number(product.compare_at_price)
     : null;
+  const dealPricing = resolveProductDealPricing(
+    rawPrice,
+    rawCompareAt,
+    productDealMap.get(product.id),
+  );
+  const price = dealPricing.effectivePrice;
+  const compareAtPrice = dealPricing.effectiveCompareAt;
   const pctOff =
     compareAtPrice && compareAtPrice > price
       ? discountPercent(price, compareAtPrice)
@@ -292,12 +305,17 @@ export default async function ProductDetailsPage({ params }: Props) {
     );
     const cat = p.category_id ? categoryMap.get(p.category_id) : null;
     const agg = relatedRatingMap.get(p.id);
+    const relPricing = resolveProductDealPricing(
+      Number(p.price),
+      p.compare_at_price ? Number(p.compare_at_price) : null,
+      productDealMap.get(p.id),
+    );
     return {
       id: p.id,
       name: p.name,
       slug: p.slug,
-      price: Number(p.price),
-      compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : null,
+      price: relPricing.effectivePrice,
+      compare_at_price: relPricing.effectiveCompareAt,
       stock_quantity: p.stock_quantity,
       is_featured: p.is_featured,
       imageUrl: imgs[0]

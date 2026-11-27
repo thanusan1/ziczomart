@@ -14,6 +14,10 @@ import {
   Truck,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
+import {
+  getActiveDealsWithProducts,
+  resolveProductDealPricing,
+} from "@/lib/deals";
 
 export const metadata = {
   title: "Shopping Cart",
@@ -56,32 +60,72 @@ export default async function CartPage() {
   }[] = [];
 
   if (cart) {
-    const { data, error } = await supabase
-      .from("cart_items")
-      .select(
-        `id, quantity,
-         products(id, name, slug, price, stock_quantity, is_active,
-           product_images(storage_path, sort_order))`,
-      )
-      .eq("cart_id", cart.id)
-      .order("created_at", { ascending: false });
+    const [{ data, error }, { productDealMap }] = await Promise.all([
+      supabase
+        .from("cart_items")
+        .select(
+          `id, quantity,
+           products(id, name, slug, price, compare_at_price, stock_quantity, is_active,
+             product_images(storage_path, sort_order))`,
+        )
+        .eq("cart_id", cart.id)
+        .order("created_at", { ascending: false }),
+      getActiveDealsWithProducts(supabase),
+    ]);
 
     if (error) throw new Error(error.message);
 
-    items = (data ?? []).map((item: any) => {
-      const product = Array.isArray(item.products)
-        ? item.products[0]
-        : item.products;
-      const imgs = [...(product?.product_images ?? [])].sort(
-        (a: any, b: any) => a.sort_order - b.sort_order,
-      );
-      const imageUrl = imgs[0]
-        ? supabase.storage
-            .from("product-images")
-            .getPublicUrl(imgs[0].storage_path).data.publicUrl
-        : null;
-      return { id: item.id, quantity: item.quantity, product, imageUrl };
-    });
+    type RawCartProduct = {
+      id: string;
+      name: string;
+      slug: string;
+      price: number | string;
+      compare_at_price: number | string | null;
+      stock_quantity: number;
+      is_active: boolean;
+      product_images: { storage_path: string; sort_order: number }[] | null;
+    };
+
+    type RawCartItem = {
+      id: string;
+      quantity: number;
+      products: RawCartProduct | RawCartProduct[] | null;
+    };
+
+    items = ((data ?? []) as RawCartItem[])
+      .map((item) => {
+        const product = Array.isArray(item.products)
+          ? item.products[0]
+          : item.products;
+        if (!product) return null;
+        const imgs = [...(product.product_images ?? [])].sort(
+          (a, b) => a.sort_order - b.sort_order,
+        );
+        const imageUrl = imgs[0]
+          ? supabase.storage
+              .from("product-images")
+              .getPublicUrl(imgs[0].storage_path).data.publicUrl
+          : null;
+        const pricing = resolveProductDealPricing(
+          Number(product.price),
+          product.compare_at_price ? Number(product.compare_at_price) : null,
+          productDealMap.get(product.id),
+        );
+        return {
+          id: item.id,
+          quantity: item.quantity,
+          product: {
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            price: pricing.effectivePrice,
+            stock_quantity: product.stock_quantity,
+            is_active: product.is_active,
+          },
+          imageUrl,
+        };
+      })
+      .filter((x): x is (typeof items)[number] => x !== null);
   }
 
   const subtotal = items.reduce(
