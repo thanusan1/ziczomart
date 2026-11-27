@@ -5,6 +5,7 @@ import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/ui/badge";
+import OrderItemReviewAction from "@/components/orders/order-item-review-action";
 import { formatPrice } from "@/lib/utils";
 import {
   CheckCircle,
@@ -48,12 +49,36 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
              shipping_address_line_1, shipping_address_line_2,
              shipping_city, shipping_district, shipping_postal_code,
              created_at,
-             order_items(id, product_name, product_sku, unit_price, quantity, line_total)`)
+             order_items(id, product_id, product_name, product_sku, unit_price, quantity, line_total,
+               products(slug, product_images(storage_path, sort_order)))`)
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (error || !order) notFound();
+
+  const productIds = (order.order_items ?? [])
+    .map((i) => i.product_id)
+    .filter((pid): pid is string => Boolean(pid));
+
+  const reviewStatusMap = new Map<
+    string,
+    "pending" | "approved" | "rejected"
+  >();
+  if (productIds.length > 0) {
+    const { data: userReviews } = await supabase
+      .from("reviews")
+      .select("product_id, is_published")
+      .eq("user_id", user.id)
+      .in("product_id", productIds);
+
+    for (const r of userReviews ?? []) {
+      reviewStatusMap.set(
+        r.product_id,
+        r.is_published ? "approved" : "pending",
+      );
+    }
+  }
 
   const currentStepIndex = TRACKING_STEPS.findIndex(
     (s) => s.status === order.status,
@@ -172,22 +197,79 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
             </div>
 
             <div className="divide-y divide-gray-100">
-              {order.order_items.map((item) => (
-                <div key={item.id} className="flex justify-between gap-4 py-4">
-                  <div>
-                    <p className="font-semibold text-gray-900">{item.product_name}</p>
-                    {item.product_sku && (
-                      <p className="mt-0.5 text-xs text-gray-400">SKU: {item.product_sku}</p>
-                    )}
-                    <p className="mt-1 text-sm text-gray-500">
-                      {formatPrice(Number(item.unit_price))} × {item.quantity}
+              {order.order_items.map((item) => {
+                const prodRaw = item.products as
+                  | {
+                      slug: string;
+                      product_images: {
+                        storage_path: string;
+                        sort_order: number;
+                      }[];
+                    }
+                  | {
+                      slug: string;
+                      product_images: {
+                        storage_path: string;
+                        sort_order: number;
+                      }[];
+                    }[]
+                  | null;
+                const prod = Array.isArray(prodRaw) ? prodRaw[0] : prodRaw;
+                const sortedImgs = [...(prod?.product_images ?? [])].sort(
+                  (a, b) => a.sort_order - b.sort_order,
+                );
+                const imgUrl = sortedImgs[0]
+                  ? supabase.storage
+                      .from("product-images")
+                      .getPublicUrl(sortedImgs[0].storage_path).data.publicUrl
+                  : null;
+                const existingReviewStatus = item.product_id
+                  ? reviewStatusMap.get(item.product_id) ?? null
+                  : null;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="flex justify-between gap-4 py-4"
+                  >
+                    <div>
+                      {prod?.slug ? (
+                        <Link
+                          href={`/products/${prod.slug}`}
+                          className="font-semibold text-gray-900 hover:text-[#2563EB]"
+                        >
+                          {item.product_name}
+                        </Link>
+                      ) : (
+                        <p className="font-semibold text-gray-900">
+                          {item.product_name}
+                        </p>
+                      )}
+                      {item.product_sku && (
+                        <p className="mt-0.5 text-xs text-gray-400">
+                          SKU: {item.product_sku}
+                        </p>
+                      )}
+                      <p className="mt-1 text-sm text-gray-500">
+                        {formatPrice(Number(item.unit_price))} ×{" "}
+                        {item.quantity}
+                      </p>
+                      <OrderItemReviewAction
+                        orderId={order.id}
+                        orderItemId={item.id}
+                        orderStatus={order.status}
+                        productId={item.product_id}
+                        productName={item.product_name}
+                        productImageUrl={imgUrl}
+                        existingReviewStatus={existingReviewStatus}
+                      />
+                    </div>
+                    <p className="flex-shrink-0 font-bold text-gray-900">
+                      {formatPrice(Number(item.line_total))}
                     </p>
                   </div>
-                  <p className="flex-shrink-0 font-bold text-gray-900">
-                    {formatPrice(Number(item.line_total))}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Totals */}

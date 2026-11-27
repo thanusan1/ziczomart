@@ -1,34 +1,118 @@
-import Link from "next/link";
-import Image from "next/image";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
-import { DiscountBadge, StockBadge } from "@/components/ui/badge";
-import { formatPrice } from "@/lib/utils";
-import AddToCartButton from "./add-to-cart-button";
-import { Package, Tag, ArrowLeft } from "lucide-react";
+import TrustStrip from "@/components/ui/trust-strip";
+import ProductMainSection from "@/components/products/product-main-section";
+import ProductDetailsTabs, {
+  type ProductSpecRow,
+} from "@/components/products/product-details-tabs";
+import ProductReviewsSection from "@/components/products/product-reviews-section";
+import RelatedProductsSection from "@/components/products/related-products-section";
+import type { ProductCardData } from "@/components/ui/product-card";
+import type { GalleryImage } from "@/components/products/product-image-gallery";
+import { getMainCategoryHref, getSubcategoryHref } from "@/lib/categories/slug";
+import { getStoreSettings } from "@/lib/store-settings";
+import {
+  fetchPublicProductReviews,
+  getProductReviewEligibility,
+} from "@/lib/reviews";
+import { discountPercent } from "@/lib/utils";
 
 export const instant = false;
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = {
+  params: Promise<{ slug: string }>;
+};
 
-export async function generateMetadata({ params }: Props) {
+function getPublicImageUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  storagePath: string,
+): string {
+  return supabase.storage
+    .from("product-images")
+    .getPublicUrl(storagePath).data.publicUrl;
+}
+
+function extractShortDescription(description: string | null): string | null {
+  if (!description) return null;
+  const cleaned = description
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^[-•*]\s+/.test(line))
+    .join(" ")
+    .trim();
+
+  if (!cleaned) return null;
+  if (cleaned.length <= 180) return cleaned;
+  return `${cleaned.slice(0, 180).trimEnd()}…`;
+}
+
+function extractKeyFeatures(description: string | null): string[] {
+  if (!description) return [];
+  const bullets = description
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[-•*]\s+/.test(line))
+    .map((line) => line.replace(/^[-•*]\s+/, "").trim())
+    .filter((line) => line.length > 0 && line.length <= 120);
+
+  return bullets.slice(0, 5);
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const supabase = await createClient();
+
   const { data: product } = await supabase
     .from("products")
-    .select("name, description")
+    .select(
+      `name, slug, description, price,
+       product_images(storage_path, sort_order)`,
+    )
     .eq("slug", slug)
     .eq("is_active", true)
     .maybeSingle();
 
-  if (!product) return { title: "Product Not Found" };
+  if (!product) {
+    return {
+      title: "Product Not Found",
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const images = [...(product.product_images ?? [])].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+  const ogImage = images[0]
+    ? getPublicImageUrl(supabase, images[0].storage_path)
+    : undefined;
+
+  const metaDescription =
+    extractShortDescription(product.description)?.slice(0, 160) ??
+    `Shop ${product.name} online at ZicZo Mart. Fast island-wide delivery across Sri Lanka.`;
 
   return {
     title: product.name,
-    description: product.description?.slice(0, 160) ?? `Buy ${product.name} at ZicZo Mart`,
+    description: metaDescription,
+    alternates: {
+      canonical: `/products/${product.slug}`,
+    },
+    openGraph: {
+      title: `${product.name} | ZicZo Mart`,
+      description: metaDescription,
+      url: `/products/${product.slug}`,
+      type: "website",
+      ...(ogImage ? { images: [{ url: ogImage, alt: product.name }] } : {}),
+    },
+    twitter: {
+      card: ogImage ? "summary_large_image" : "summary",
+      title: `${product.name} | ZicZo Mart`,
+      description: metaDescription,
+      ...(ogImage ? { images: [ogImage] } : {}),
+    },
   };
 }
 
@@ -36,283 +120,330 @@ export default async function ProductDetailsPage({ params }: Props) {
   const { slug } = await params;
   const supabase = await createClient();
 
+  /* ── 1. Fetch active product with images ─────────────────────── */
   const { data: product, error } = await supabase
     .from("products")
     .select(
-      `id, name, slug, sku, description, price, compare_at_price,
+      `id, category_id, name, slug, sku, description, price, compare_at_price,
        stock_quantity, is_active, is_featured,
-       product_images(id, storage_path, alt_text, sort_order),
-       categories(name, slug)`,
+       product_images(id, storage_path, alt_text, sort_order)`,
     )
     .eq("slug", slug)
     .eq("is_active", true)
     .maybeSingle();
 
-  if (error || !product) notFound();
+  if (error || !product) {
+    notFound();
+  }
 
-  const images = [...(product.product_images ?? [])].sort(
-    (a, b) => a.sort_order - b.sort_order,
+  /* ── 2. Fetch categories hierarchy, public reviews, user & store settings ── */
+  const [
+    { data: allCategories },
+    reviews,
+    { settings },
+    {
+      data: { user },
+    },
+  ] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id, name, slug, parent_id")
+      .eq("is_active", true),
+    fetchPublicProductReviews(supabase, product.id),
+    getStoreSettings(supabase),
+    supabase.auth.getUser(),
+  ]);
+
+  const eligibility = await getProductReviewEligibility(
+    supabase,
+    product.id,
+    user?.id ?? null,
   );
 
-  const catRaw = product.categories as
-    | { name: string; slug: string }
-    | { name: string; slug: string }[]
-    | null;
-  const category = Array.isArray(catRaw) ? catRaw[0] : catRaw;
+  const categoryMap = new Map(
+    (allCategories ?? []).map((c) => [c.id, c]),
+  );
+  const assignedCategory = product.category_id
+    ? categoryMap.get(product.category_id) ?? null
+    : null;
+  const parentCategory =
+    assignedCategory?.parent_id
+      ? categoryMap.get(assignedCategory.parent_id) ?? null
+      : null;
+
+  const mainCategory = parentCategory ?? assignedCategory;
+  const subCategory = parentCategory ? assignedCategory : null;
+
+  const mainCategoryHref = mainCategory
+    ? getMainCategoryHref(mainCategory)
+    : "/products";
+  const subCategoryHref =
+    mainCategory && subCategory
+      ? getSubcategoryHref(mainCategory, subCategory.slug)
+      : null;
+
+  const breadcrumbItems = [
+    ...(mainCategory
+      ? [{ label: mainCategory.name, href: mainCategoryHref }]
+      : [{ label: "Products", href: "/products" }]),
+    ...(subCategory && subCategoryHref
+      ? [{ label: subCategory.name, href: subCategoryHref }]
+      : []),
+    { label: product.name },
+  ];
+
+  /* ── 3. Images & Pricing ─────────────────────────────────────── */
+  const sortedImages = [...(product.product_images ?? [])].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+  const galleryImages: GalleryImage[] = sortedImages.map((img, idx) => ({
+    id: img.id,
+    url: getPublicImageUrl(supabase, img.storage_path),
+    alt: img.alt_text?.trim() || `${product.name} - Image ${idx + 1}`,
+  }));
 
   const price = Number(product.price);
-  const comparePrice = product.compare_at_price
+  const compareAtPrice = product.compare_at_price
     ? Number(product.compare_at_price)
     : null;
-  const hasDiscount = comparePrice != null && comparePrice > price;
+  const pctOff =
+    compareAtPrice && compareAtPrice > price
+      ? discountPercent(price, compareAtPrice)
+      : 0;
 
-  const getUrl = (path: string) =>
-    supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
+  /* ── 4. Reviews aggregation ──────────────────────────────────── */
+  const reviewCount = reviews.length;
+  const averageRating =
+    reviewCount > 0
+      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount
+      : null;
 
-  const primaryImage = images[0];
-  const thumbnails = images.slice(1);
+  /* ── 5. Related Products (same subcategory -> main category -> sibling subs) ── */
+  const candidateCategoryIds: string[] = [];
+  if (product.category_id) candidateCategoryIds.push(product.category_id);
+  if (mainCategory) {
+    if (!candidateCategoryIds.includes(mainCategory.id)) {
+      candidateCategoryIds.push(mainCategory.id);
+    }
+    for (const cat of allCategories ?? []) {
+      if (
+        cat.parent_id === mainCategory.id &&
+        !candidateCategoryIds.includes(cat.id)
+      ) {
+        candidateCategoryIds.push(cat.id);
+      }
+    }
+  }
 
-  /* Related products from same category */
-  let relatedProducts: {
-    id: string; name: string; slug: string; price: number;
-    imageUrl: string | null;
+  let relatedRaw: {
+    id: string;
+    category_id: string | null;
+    name: string;
+    slug: string;
+    price: number | string;
+    compare_at_price: number | string | null;
+    stock_quantity: number;
+    is_featured: boolean;
+    product_images: { storage_path: string; sort_order: number }[] | null;
   }[] = [];
 
-  if (category && !Array.isArray(catRaw)) {
-    const { data: related } = await supabase
+  if (candidateCategoryIds.length > 0) {
+    const { data: sameCatProducts } = await supabase
       .from("products")
       .select(
-        `id, name, slug, price,
+        `id, category_id, name, slug, price, compare_at_price, stock_quantity, is_featured,
          product_images(storage_path, sort_order)`,
       )
       .eq("is_active", true)
-      .neq("slug", slug)
-      .limit(4);
+      .neq("id", product.id)
+      .in("category_id", candidateCategoryIds)
+      .limit(8);
 
-    relatedProducts = (related ?? []).map((p) => {
-      const img = [...(p.product_images ?? [])].sort(
-        (a, b) => a.sort_order - b.sort_order,
-      )[0];
-      return {
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        price: Number(p.price),
-        imageUrl: img ? getUrl(img.storage_path) : null,
-      };
+    relatedRaw = (sameCatProducts ?? []).sort((a, b) => {
+      const aExact = a.category_id === product.category_id ? 0 : 1;
+      const bExact = b.category_id === product.category_id ? 0 : 1;
+      return aExact - bExact;
     });
   }
 
+  const relatedSlice = relatedRaw.slice(0, 4);
+  const relatedIds = relatedSlice.map((p) => p.id);
+  const relatedRatingMap = new Map<string, { sum: number; count: number }>();
+
+  if (relatedIds.length > 0) {
+    const { data: relReviews } = await supabase
+      .from("reviews")
+      .select("product_id, rating")
+      .eq("is_published", true)
+      .in("product_id", relatedIds);
+
+    for (const rev of relReviews ?? []) {
+      const prev = relatedRatingMap.get(rev.product_id) ?? { sum: 0, count: 0 };
+      relatedRatingMap.set(rev.product_id, {
+        sum: prev.sum + Number(rev.rating),
+        count: prev.count + 1,
+      });
+    }
+  }
+
+  const relatedProducts: ProductCardData[] = relatedSlice.map((p) => {
+    const imgs = [...(p.product_images ?? [])].sort(
+      (a, b) => a.sort_order - b.sort_order,
+    );
+    const cat = p.category_id ? categoryMap.get(p.category_id) : null;
+    const agg = relatedRatingMap.get(p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      price: Number(p.price),
+      compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : null,
+      stock_quantity: p.stock_quantity,
+      is_featured: p.is_featured,
+      imageUrl: imgs[0]
+        ? getPublicImageUrl(supabase, imgs[0].storage_path)
+        : null,
+      category: cat?.name ?? null,
+      categorySlug: cat?.slug ?? null,
+      rating: agg ? agg.sum / agg.count : null,
+      reviewCount: agg?.count ?? 0,
+    };
+  });
+
+  /* ── 6. Dynamic Specifications & Key Features (no invented data) ── */
+  const specifications: ProductSpecRow[] = [
+    ...(mainCategory ? [{ label: "Category", value: mainCategory.name }] : []),
+    ...(subCategory
+      ? [{ label: "Subcategory", value: subCategory.name }]
+      : []),
+    ...(product.sku ? [{ label: "SKU", value: product.sku }] : []),
+    {
+      label: "Availability",
+      value:
+        product.stock_quantity > 0
+          ? `In Stock (${product.stock_quantity} available)`
+          : "Out of Stock",
+    },
+  ];
+
+  const keyFeatures = extractKeyFeatures(product.description);
+  const shortDescription = extractShortDescription(product.description);
+  const freeDeliveryNotice = settings.announcement_1
+    ?.toLowerCase()
+    .includes("free delivery")
+    ? settings.announcement_1
+    : null;
+
+  /* ── 7. JSON-LD Structured Data ──────────────────────────────── */
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    ...(galleryImages.length > 0
+      ? { image: galleryImages.map((img) => img.url) }
+      : {}),
+    ...(shortDescription ? { description: shortDescription } : {}),
+    ...(product.sku ? { sku: product.sku } : {}),
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "LKR",
+      price: price.toFixed(2),
+      availability:
+        product.stock_quantity > 0
+          ? "https://schema.org/InStock"
+          : "https://schema.org/OutOfStock",
+    },
+    ...(reviewCount > 0 && averageRating !== null
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: averageRating.toFixed(1),
+            reviewCount,
+          },
+        }
+      : {}),
+  };
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
       <Header />
 
-      <main className="min-h-screen bg-white">
-        {/* Breadcrumb */}
-        <div className="border-b border-gray-100 bg-gray-50">
+      <main className="min-h-screen bg-[#F8FAFC] pb-20 lg:pb-0">
+        {/* Breadcrumb Bar */}
+        <div className="border-b border-[#E2E8F0] bg-white">
           <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6">
             <Breadcrumb
-              items={[
-                { label: "Products", href: "/products" },
-                ...(category
-                  ? [{ label: category.name, href: `/products?category=${category.slug}` }]
-                  : []),
-                { label: product.name },
-              ]}
+              items={breadcrumbItems}
+              className="flex-wrap text-xs sm:text-sm"
             />
           </div>
         </div>
 
-        {/* Product Detail */}
-        <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-          <div className="grid gap-10 lg:grid-cols-2 lg:gap-14">
+        {/* Main 3-Column Product Section */}
+        <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+          <ProductMainSection
+            images={galleryImages}
+            discountPct={pctOff}
+            productId={product.id}
+            productName={product.name}
+            productSlug={product.slug}
+            sku={product.sku}
+            brand={null}
+            categoryName={subCategory?.name ?? mainCategory?.name ?? null}
+            categoryHref={subCategoryHref ?? mainCategoryHref}
+            price={price}
+            compareAtPrice={compareAtPrice}
+            stockQuantity={product.stock_quantity}
+            shortDescription={shortDescription}
+            keyFeatures={keyFeatures}
+            rating={averageRating}
+            reviewCount={reviewCount}
+            freeDeliveryNotice={freeDeliveryNotice}
+          />
+        </section>
 
-            {/* ── Image Gallery ───────────────────────────── */}
-            <div className="space-y-3">
-              {/* Primary image */}
-              <div className="relative overflow-hidden rounded-2xl border border-gray-100 bg-gray-50">
-                {primaryImage ? (
-                  <div className="relative aspect-square">
-                    <Image
-                      src={getUrl(primaryImage.storage_path)}
-                      alt={primaryImage.alt_text ?? product.name}
-                      fill
-                      sizes="(max-width: 1024px) 100vw, 50vw"
-                      className="object-cover"
-                      priority
-                    />
-                  </div>
-                ) : (
-                  <div className="flex aspect-square items-center justify-center">
-                    <Package size={72} className="text-gray-200" />
-                  </div>
-                )}
-                {hasDiscount && (
-                  <div className="absolute left-4 top-4">
-                    <DiscountBadge price={price} compareAtPrice={comparePrice} />
-                  </div>
-                )}
-              </div>
-
-              {/* Thumbnail strip */}
-              {thumbnails.length > 0 && (
-                <div className="grid grid-cols-4 gap-2">
-                  {thumbnails.map((img) => (
-                    <div
-                      key={img.id}
-                      className="relative overflow-hidden rounded-xl border border-gray-100 bg-gray-50"
-                    >
-                      <div className="relative aspect-square">
-                        <Image
-                          src={getUrl(img.storage_path)}
-                          alt={img.alt_text ?? product.name}
-                          fill
-                          sizes="80px"
-                          className="object-cover"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+        {/* Description / Specifications Tabs + You May Also Like */}
+        <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+            <div className="lg:col-span-6">
+              <ProductDetailsTabs
+                description={product.description}
+                specifications={specifications}
+                reviewCount={reviewCount}
+              />
             </div>
 
-            {/* ── Product Info ─────────────────────────────── */}
-            <div className="flex flex-col py-2">
-              {/* Category */}
-              {category && (
-                <Link
-                  href={`/products?category=${category.slug}`}
-                  className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-600 hover:bg-orange-100"
-                >
-                  <Tag size={11} />
-                  {category.name}
-                </Link>
-              )}
-
-              {/* Name */}
-              <h1 className="text-2xl font-extrabold leading-tight text-gray-900 sm:text-3xl">
-                {product.name}
-              </h1>
-
-              {/* SKU */}
-              {product.sku && (
-                <p className="mt-2 text-xs text-gray-400">
-                  SKU: <span className="font-medium text-gray-500">{product.sku}</span>
-                </p>
-              )}
-
-              {/* Price */}
-              <div className="mt-5 flex flex-wrap items-baseline gap-3">
-                <span className="text-3xl font-extrabold text-gray-900">
-                  {formatPrice(price)}
-                </span>
-                {hasDiscount && (
-                  <>
-                    <span className="text-lg text-gray-400 line-through">
-                      {formatPrice(comparePrice!)}
-                    </span>
-                    <DiscountBadge
-                      price={price}
-                      compareAtPrice={comparePrice}
-                      className="text-sm"
-                    />
-                  </>
-                )}
-              </div>
-
-              {/* Stock */}
-              <div className="mt-3">
-                <StockBadge quantity={product.stock_quantity} />
-              </div>
-
-              {/* Divider */}
-              <div className="my-6 border-t border-gray-100" />
-
-              {/* Description */}
-              {product.description && (
-                <div className="mb-6">
-                  <h2 className="mb-2 text-sm font-bold uppercase tracking-widest text-gray-500">
-                    Description
-                  </h2>
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">
-                    {product.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Add to Cart */}
-              <div className="mt-auto">
-                <AddToCartButton
-                  productId={product.id}
-                  stockQuantity={product.stock_quantity}
-                />
-              </div>
-
-              {/* Trust */}
-              <div className="mt-5 flex flex-wrap gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 text-xs text-gray-500">
-                <span>✓ Cash on Delivery</span>
-                <span>✓ Island-wide shipping</span>
-                <span>✓ Secure checkout</span>
-              </div>
-
-              {/* Back link */}
-              <Link
-                href="/products"
-                className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-orange-500"
-              >
-                <ArrowLeft size={14} />
-                Back to Products
-              </Link>
+            <div className="lg:col-span-6">
+              <RelatedProductsSection
+                products={relatedProducts}
+                viewAllHref={subCategoryHref ?? mainCategoryHref}
+              />
             </div>
           </div>
         </section>
 
-        {/* ── Related Products ───────────────────────────── */}
-        {relatedProducts.length > 0 && (
-          <section className="border-t border-gray-100 bg-gray-50 py-14">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6">
-              <h2 className="mb-6 text-xl font-extrabold text-gray-900">
-                You May Also Like
-              </h2>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {relatedProducts.map((p) => (
-                  <Link
-                    key={p.id}
-                    href={`/products/${p.slug}`}
-                    className="group overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                  >
-                    <div className="relative aspect-square bg-gray-50">
-                      {p.imageUrl ? (
-                        <Image
-                          src={p.imageUrl}
-                          alt={p.name}
-                          fill
-                          sizes="(max-width: 640px) 50vw, 25vw"
-                          className="object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <Package size={30} className="text-gray-200" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-3">
-                      <p className="line-clamp-2 text-xs font-semibold text-gray-800 group-hover:text-orange-500">
-                        {p.name}
-                      </p>
-                      <p className="mt-1.5 text-sm font-extrabold text-gray-900">
-                        {formatPrice(p.price)}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
+        {/* Full Customer Reviews Section */}
+        <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6">
+          <ProductReviewsSection
+            productId={product.id}
+            productName={product.name}
+            productSlug={product.slug}
+            productImageUrl={galleryImages[0]?.url ?? null}
+            reviews={reviews}
+            eligibility={eligibility}
+          />
+        </section>
+
+        {/* Existing Trust Benefits Strip */}
+        <TrustStrip />
       </main>
 
+      {/* Existing Global Footer (rendered exactly once) */}
       <Footer />
     </>
   );

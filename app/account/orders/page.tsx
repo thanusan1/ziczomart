@@ -29,14 +29,24 @@ export default async function MyOrdersPage() {
 
   if (!user) redirect("/login?next=/account/orders");
 
-  const { data: orders, error } = await supabase
-    .from("orders")
-    .select(`id, order_number, status, payment_method, payment_status,
-             total, currency, created_at, order_items(id)`)
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  const [{ data: orders, error }, { data: userReviews }] = await Promise.all([
+    supabase
+      .from("orders")
+      .select(`id, order_number, status, payment_method, payment_status,
+               total, currency, created_at, order_items(id, product_id)`)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("reviews")
+      .select("product_id")
+      .eq("user_id", user.id),
+  ]);
 
   if (error) throw new Error("Could not load your orders.");
+
+  const reviewedProductIds = new Set(
+    (userReviews ?? []).map((r) => r.product_id),
+  );
 
   return (
     <>
@@ -153,13 +163,38 @@ export default async function MyOrdersPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 border-t border-gray-100 pt-4">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
                     <Link
                       href={`/account/orders/${order.id}`}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-500"
                     >
                       View Details <ArrowRight size={14} />
                     </Link>
+
+                    {order.status.toLowerCase() === "delivered" &&
+                      (() => {
+                        const items = order.order_items as {
+                          id: string;
+                          product_id: string | null;
+                        }[];
+                        const hasUnreviewed = items.some(
+                          (it) =>
+                            it.product_id &&
+                            !reviewedProductIds.has(it.product_id),
+                        );
+                        return hasUnreviewed ? (
+                          <Link
+                            href={`/account/orders/${order.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3.5 py-2 text-xs font-bold text-[#2563EB] transition hover:bg-blue-100"
+                          >
+                            Write a Review
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-[#16A34A]">
+                            Reviewed
+                          </span>
+                        );
+                      })()}
                   </div>
                 </div>
               ))}
