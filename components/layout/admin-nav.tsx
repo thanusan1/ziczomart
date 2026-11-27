@@ -9,6 +9,7 @@ import {
   Tags,
   ShoppingCart,
   Users,
+  Megaphone,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
   { href: "/admin/categories", label: "Categories", icon: Tags, exact: false },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, exact: false },
   { href: "/admin/customers", label: "Customers", icon: Users, exact: false },
+  { href: "/admin/settings", label: "Promotions", icon: Megaphone, exact: false },
 ];
 
 export default function AdminNav() {

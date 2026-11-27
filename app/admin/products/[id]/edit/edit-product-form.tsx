@@ -17,6 +17,9 @@ type Product = {
   stock_quantity: number;
   is_active: boolean;
   is_featured: boolean;
+  is_best_deal?: boolean;
+  is_best_seller?: boolean;
+  is_new_arrival?: boolean;
 };
 
 type ProductImage = {
@@ -54,6 +57,13 @@ export default function EditProductForm({ product, initialImages }: Props) {
 
   const [isActive, setIsActive] = useState(product.is_active);
   const [isFeatured, setIsFeatured] = useState(product.is_featured);
+  const [isBestDeal, setIsBestDeal] = useState(Boolean(product.is_best_deal));
+  const [isBestSeller, setIsBestSeller] = useState(
+    Boolean(product.is_best_seller),
+  );
+  const [isNewArrival, setIsNewArrival] = useState(
+    Boolean(product.is_new_arrival),
+  );
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [existingImages, setExistingImages] =
@@ -182,7 +192,7 @@ export default function EditProductForm({ product, initialImages }: Props) {
 
     try {
       // Update product information.
-      const { error: updateError } = await supabase
+      let { error: updateError } = await supabase
         .from("products")
         .update({
           name: name.trim(),
@@ -194,8 +204,34 @@ export default function EditProductForm({ product, initialImages }: Props) {
           stock_quantity: parsedStock,
           is_active: isActive,
           is_featured: isFeatured,
+          is_best_deal: isBestDeal,
+          is_best_seller: isBestSeller,
+          is_new_arrival: isNewArrival,
         })
         .eq("id", product.id);
+
+      if (
+        updateError &&
+        (updateError.message.includes("is_best_deal") ||
+          updateError.message.includes("is_best_seller") ||
+          updateError.message.includes("is_new_arrival"))
+      ) {
+        const fallback = await supabase
+          .from("products")
+          .update({
+            name: name.trim(),
+            category_id: categoryId,
+            sku: sku.trim() || null,
+            description: description.trim() || null,
+            price: parsedPrice,
+            compare_at_price: parsedCompareAtPrice,
+            stock_quantity: parsedStock,
+            is_active: isActive,
+            is_featured: isFeatured,
+          })
+          .eq("id", product.id);
+        updateError = fallback.error;
+      }
 
       if (updateError) {
         throw new Error(updateError.message);
@@ -559,7 +595,46 @@ export default function EditProductForm({ product, initialImages }: Props) {
             />
 
             <span className="text-sm font-medium text-gray-700">
-              Featured — highlight this product in the store
+              Featured — highlight this product in Featured Products
+            </span>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              checked={isBestDeal}
+              onChange={(e) => setIsBestDeal(e.target.checked)}
+              className="h-4 w-4 accent-orange-500"
+            />
+
+            <span className="text-sm font-medium text-gray-700">
+              Best Deal — show this product in Today&apos;s Best Deals
+            </span>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              checked={isNewArrival}
+              onChange={(e) => setIsNewArrival(e.target.checked)}
+              className="h-4 w-4 accent-orange-500"
+            />
+
+            <span className="text-sm font-medium text-gray-700">
+              New Arrival — show this product in New Arrivals
+            </span>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              checked={isBestSeller}
+              onChange={(e) => setIsBestSeller(e.target.checked)}
+              className="h-4 w-4 accent-orange-500"
+            />
+
+            <span className="text-sm font-medium text-gray-700">
+              Best Seller — show this product in Best Sellers
             </span>
           </label>
         </div>

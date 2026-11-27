@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
+import { getStoreSettings } from "@/lib/store-settings";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import ProductCard, { type ProductCardData } from "@/components/ui/product-card";
@@ -55,6 +56,9 @@ type RawProduct = {
   compare_at_price: number | string | null;
   stock_quantity: number;
   is_featured?: boolean | null;
+  is_best_seller?: boolean | null;
+  is_new_arrival?: boolean | null;
+  is_best_deal?: boolean | null;
   product_images: { storage_path: string; sort_order: number }[] | null;
   categories: { name: string } | { name: string }[] | null;
 };
@@ -97,12 +101,14 @@ function buildSlots<T>(items: T[], totalSlots: number): (T | null)[] {
 export default async function HomePage() {
   const supabase = await createClient();
 
-  /* Fetch active categories and active products fresh from Supabase */
+  /* Fetch active categories, active products, and storefront promo settings */
   const [
     { data: categoriesRaw },
     { data: dealsRaw },
     { data: featuredRaw },
     { data: newArrivalsRaw },
+    { data: pinnedRaw },
+    { settings: storeSettings },
   ] = await Promise.all([
     supabase
       .from("categories")
@@ -138,26 +144,57 @@ export default async function HomePage() {
     supabase
       .from("products")
       .select(
-        `id, name, slug, price, compare_at_price, stock_quantity, is_featured,
+        `*,
          product_images(storage_path, sort_order),
          categories(name)`,
       )
       .eq("is_active", true)
       .order("created_at", { ascending: false })
-      .limit(12),
+      .limit(50),
+
+    supabase
+      .from("products")
+      .select(
+        `*,
+         product_images(storage_path, sort_order),
+         categories(name)`,
+      )
+      .eq("is_active", true)
+      .or("is_best_deal.eq.true,is_best_seller.eq.true,is_new_arrival.eq.true")
+      .order("created_at", { ascending: false }),
+
+    getStoreSettings(supabase),
   ]);
 
   const categories = dedupeById(categoriesRaw ?? []).slice(0, 8);
 
-  /* Today's Best Deals: discounted active products (compare_at_price > price), exactly 5 slots */
+  const allFetchedProducts = dedupeById([
+    ...((pinnedRaw ?? []) as RawProduct[]),
+    ...((newArrivalsRaw ?? []) as RawProduct[]),
+  ]);
+  const hasNewArrivalCol = allFetchedProducts.some(
+    (p) => "is_new_arrival" in (p as Record<string, unknown>),
+  );
+  const hasBestSellerCol = allFetchedProducts.some(
+    (p) => "is_best_seller" in (p as Record<string, unknown>),
+  );
+  const hasBestDealCol = allFetchedProducts.some(
+    (p) => "is_best_deal" in (p as Record<string, unknown>),
+  );
+
+  /* Today's Best Deals: only products with is_best_deal = true (when column exists), else discounted active products */
   const dealsProducts = dedupeById(
-    (dealsRaw ?? [])
-      .map((p) => mapProduct(supabase, p as RawProduct))
-      .filter(
-        (p) =>
-          p.compare_at_price != null &&
-          Number(p.compare_at_price) > Number(p.price),
-      ),
+    (hasBestDealCol
+      ? allFetchedProducts
+          .filter((p) => Boolean((p as RawProduct).is_best_deal))
+          .map((p) => mapProduct(supabase, p as RawProduct))
+      : (dealsRaw ?? [])
+          .map((p) => mapProduct(supabase, p as RawProduct))
+          .filter(
+            (p) =>
+              p.compare_at_price != null &&
+              Number(p.compare_at_price) > Number(p.price),
+          )),
   );
   const dealSlots = buildSlots(dealsProducts, 5);
 
@@ -167,19 +204,27 @@ export default async function HomePage() {
   );
   const featuredSlots = buildSlots(featuredProducts, 5);
 
-  /* New Arrivals: newest active products, exactly 5 slots */
+  /* New Arrivals: only products with is_new_arrival = true (when column exists), up to 5 slots */
   const newArrivalsProducts = dedupeById(
-    (newArrivalsRaw ?? []).map((p) => mapProduct(supabase, p as RawProduct)),
+    (hasNewArrivalCol
+      ? allFetchedProducts.filter((p) =>
+          Boolean((p as RawProduct).is_new_arrival),
+        )
+      : allFetchedProducts
+    ).map((p) => mapProduct(supabase, p as RawProduct)),
   );
   const newArrivalSlots = buildSlots(newArrivalsProducts, 5);
 
-  /* Best Sellers: 3 slots — prefer featured or other active products without duplicating within Best Sellers */
-  const bestSellerPool = dedupeById([
-    ...featuredProducts,
-    ...dealsProducts,
-    ...newArrivalsProducts,
-  ]);
-  const bestSellerSlots = buildSlots(bestSellerPool, 3);
+  /* Best Sellers: only products with is_best_seller = true (when column exists), up to 3 slots */
+  const bestSellersProducts = dedupeById(
+    (hasBestSellerCol
+      ? allFetchedProducts.filter((p) =>
+          Boolean((p as RawProduct).is_best_seller),
+        )
+      : [...featuredProducts, ...dealsProducts, ...newArrivalsProducts]
+    ).map((p) => mapProduct(supabase, p as RawProduct)),
+  );
+  const bestSellerSlots = buildSlots(bestSellersProducts, 3);
 
   return (
     <>
@@ -304,10 +349,11 @@ export default async function HomePage() {
         {/* ════════════════════════════════════════════════════
             3. SHOP BY CATEGORY
         ════════════════════════════════════════════════════ */}
+        {storeSettings.show_categories && (
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-xl font-extrabold text-[#0A1633] sm:text-2xl">
-              Shop by Category
+              {storeSettings.title_categories}
             </h2>
             <Link
               href="/categories"
@@ -369,16 +415,18 @@ export default async function HomePage() {
             </div>
           )}
         </section>
+        )}
 
         {/* ════════════════════════════════════════════════════
             4. TODAY'S BEST DEALS (Exactly 5 Slots)
         ════════════════════════════════════════════════════ */}
+        {storeSettings.show_deals && (
         <section className="mx-auto max-w-7xl px-4 pb-10 sm:px-6">
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap size={20} className="fill-[#1049C6] text-[#1049C6]" />
               <h2 className="text-xl font-extrabold text-[#0A1633] sm:text-2xl">
-                Today&apos;s Best Deals
+                {storeSettings.title_deals}
               </h2>
             </div>
             <Link
@@ -407,6 +455,7 @@ export default async function HomePage() {
             )}
           </div>
         </section>
+        )}
 
         {/* ════════════════════════════════════════════════════
             5. FEATURED PRODUCTS (5 Slots) + UPGRADE YOUR EVERYDAY BANNER
@@ -414,12 +463,13 @@ export default async function HomePage() {
         <section className="mx-auto max-w-7xl px-4 pb-10 sm:px-6">
           <div className="grid gap-6 lg:grid-cols-12">
             {/* Left: Featured Products (5 slots) */}
+            {storeSettings.show_featured && (
             <div className="lg:col-span-8">
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Star size={19} className="fill-[#1049C6] text-[#1049C6]" />
                   <h2 className="text-lg font-extrabold text-[#0A1633] sm:text-xl">
-                    Featured Products
+                    {storeSettings.title_featured}
                   </h2>
                 </div>
                 <Link
@@ -447,9 +497,10 @@ export default async function HomePage() {
                 )}
               </div>
             </div>
+            )}
 
-            {/* Right: "Upgrade Your Everyday" Promo Banner (Uses uploaded promo-portrait.jpg) */}
-            <div className="flex flex-col lg:col-span-4">
+            {/* Right: "Upgrade Your Everyday" Promo Banner */}
+            <div className={`flex flex-col ${storeSettings.show_featured ? "lg:col-span-4" : "lg:col-span-12"}`}>
               <div className="mb-4 hidden items-center justify-end lg:flex">
                 <Link
                   href="/products"
@@ -463,9 +514,10 @@ export default async function HomePage() {
                 {/* Right-side Portrait Image */}
                 <div className="absolute inset-y-0 right-0 w-[56%] sm:w-[52%]">
                   <Image
-                    src="/images/promo-woman.jpg"
-                    alt="Upgrade Your Everyday with ZicZo Mart"
+                    src={storeSettings.promo_image_url || "/images/promo-woman.jpg"}
+                    alt={storeSettings.promo_title}
                     fill
+                    unoptimized={Boolean(storeSettings.promo_image_url)}
                     sizes="(max-width: 1024px) 50vw, 280px"
                     className="object-cover object-top"
                   />
@@ -477,21 +529,19 @@ export default async function HomePage() {
                 <div className="relative z-10 flex h-full max-w-[58%] flex-col justify-between p-5 sm:p-6">
                   <div>
                     <h3 className="text-xl font-extrabold leading-tight text-[#0A1633] sm:text-2xl">
-                      Upgrade
-                      <br />
-                      Your Everyday
+                      {storeSettings.promo_title}
                     </h3>
                     <p className="mt-2 text-xs leading-relaxed text-slate-600 sm:text-sm">
-                      Discover products that make life better.
+                      {storeSettings.promo_subtitle}
                     </p>
                   </div>
 
                   <div className="mt-5">
                     <Link
-                      href="/products"
+                      href={storeSettings.promo_cta_href || "/products"}
                       className="inline-flex items-center gap-1.5 rounded-full bg-[#1049C6] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0B3BA8]"
                     >
-                      Explore Now <ArrowRight size={13} />
+                      {storeSettings.promo_cta_label} <ArrowRight size={13} />
                     </Link>
                   </div>
                 </div>
@@ -503,15 +553,17 @@ export default async function HomePage() {
         {/* ════════════════════════════════════════════════════
             6. NEW ARRIVALS (5 Slots) + BEST SELLERS (3 Slots)
         ════════════════════════════════════════════════════ */}
+        {(storeSettings.show_new_arrivals || storeSettings.show_best_sellers) && (
         <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6">
           <div className="grid gap-6 lg:grid-cols-12">
             {/* Left: New Arrivals (5 slots) */}
-            <div className="lg:col-span-8">
+            {storeSettings.show_new_arrivals && (
+            <div className={storeSettings.show_best_sellers ? "lg:col-span-8" : "lg:col-span-12"}>
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Rocket size={18} className="text-[#1049C6]" />
                   <h2 className="text-lg font-extrabold text-[#0A1633] sm:text-xl">
-                    New Arrivals
+                    {storeSettings.title_new_arrivals}
                   </h2>
                 </div>
                 <Link
@@ -539,14 +591,16 @@ export default async function HomePage() {
                 )}
               </div>
             </div>
+            )}
 
             {/* Right: Best Sellers (3 slots) */}
-            <div className="lg:col-span-4">
+            {storeSettings.show_best_sellers && (
+            <div className={storeSettings.show_new_arrivals ? "lg:col-span-4" : "lg:col-span-12"}>
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Trophy size={18} className="text-amber-500" />
                   <h2 className="text-lg font-extrabold text-[#0A1633] sm:text-xl">
-                    Best Sellers
+                    {storeSettings.title_best_sellers}
                   </h2>
                 </div>
                 <Link
@@ -574,8 +628,10 @@ export default async function HomePage() {
                 )}
               </div>
             </div>
+            )}
           </div>
         </section>
+        )}
 
         {/* ════════════════════════════════════════════════════
             7. ROYAL BLUE NEWSLETTER / ACCOUNT CTA BAR

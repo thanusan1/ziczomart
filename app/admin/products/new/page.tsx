@@ -34,6 +34,9 @@ export default function NewProductPage() {
   const [stock, setStock] = useState("0");
   const [isActive, setIsActive] = useState(true);
   const [isFeatured, setIsFeatured] = useState(false);
+  const [isBestDeal, setIsBestDeal] = useState(false);
+  const [isBestSeller, setIsBestSeller] = useState(false);
+  const [isNewArrival, setIsNewArrival] = useState(false);
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
@@ -193,7 +196,7 @@ export default function NewProductPage() {
         .slice(0, 8)}`;
 
       // Create product record.
-      const { data: product, error: productError } = await supabase
+      let { data: product, error: productError } = await supabase
         .from("products")
         .insert({
           name: name.trim(),
@@ -206,9 +209,38 @@ export default function NewProductPage() {
           stock_quantity: numericStock,
           is_active: isActive,
           is_featured: isFeatured,
+          is_best_deal: isBestDeal,
+          is_best_seller: isBestSeller,
+          is_new_arrival: isNewArrival,
         })
         .select("id")
         .single();
+
+      if (
+        productError &&
+        (productError.message.includes("is_best_deal") ||
+          productError.message.includes("is_best_seller") ||
+          productError.message.includes("is_new_arrival"))
+      ) {
+        const fallback = await supabase
+          .from("products")
+          .insert({
+            name: name.trim(),
+            slug,
+            category_id: categoryId || null,
+            sku: sku.trim() || null,
+            description: description.trim() || null,
+            price: numericPrice,
+            compare_at_price: numericComparePrice,
+            stock_quantity: numericStock,
+            is_active: isActive,
+            is_featured: isFeatured,
+          })
+          .select("id")
+          .single();
+        product = fallback.data;
+        productError = fallback.error;
+      }
 
       if (productError || !product) {
         throw new Error(productError?.message || "Unable to create product.");
@@ -584,6 +616,45 @@ export default function NewProductPage() {
 
               <span className="text-sm font-medium text-gray-700">
                 Featured — mark this product as featured
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={isBestDeal}
+                onChange={(e) => setIsBestDeal(e.target.checked)}
+                className="h-4 w-4 accent-orange-500"
+              />
+
+              <span className="text-sm font-medium text-gray-700">
+                Best Deal — show this product in Today&apos;s Best Deals
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={isNewArrival}
+                onChange={(e) => setIsNewArrival(e.target.checked)}
+                className="h-4 w-4 accent-orange-500"
+              />
+
+              <span className="text-sm font-medium text-gray-700">
+                New Arrival — show this product in New Arrivals
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={isBestSeller}
+                onChange={(e) => setIsBestSeller(e.target.checked)}
+                className="h-4 w-4 accent-orange-500"
+              />
+
+              <span className="text-sm font-medium text-gray-700">
+                Best Seller — show this product in Best Sellers
               </span>
             </label>
           </div>

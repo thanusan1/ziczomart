@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
+  DEFAULT_STORE_SETTINGS,
+  getStoreSettings,
+  type StoreSettings,
+} from "@/lib/store-settings";
+import {
   ShoppingCart,
   ShoppingBag,
   Search,
@@ -64,6 +69,9 @@ export default function Header() {
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
   const [categories, setCategories] = useState<CategoryNav[]>([]);
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(
+    DEFAULT_STORE_SETTINGS,
+  );
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,14 +86,18 @@ export default function Header() {
     const supabase = createClient();
 
     async function init() {
-      const [{ data: sessionData }, { data: cats }] = await Promise.all([
-        supabase.auth.getSession(),
-        supabase
-          .from("categories")
-          .select("*")
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true }),
-      ]);
+      const [{ data: sessionData }, { data: cats }, { settings }] =
+        await Promise.all([
+          supabase.auth.getSession(),
+          supabase
+            .from("categories")
+            .select("*")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true }),
+          getStoreSettings(supabase),
+        ]);
+
+      setStoreSettings(settings);
 
       const topLevelCats = ((cats ?? []) as (CategoryNav & { parent_id?: string | null })[]).filter(
         (c) => !c.parent_id,
@@ -225,27 +237,27 @@ export default function Header() {
           <div className="hidden items-center gap-8 md:flex">
             <span className="inline-flex items-center gap-1.5">
               <Truck size={13} className="text-blue-200" />
-              Free Delivery on Orders Over Rs. 5,000
+              {storeSettings.announcement_1}
             </span>
             <span className="text-blue-300/50">|</span>
             <span className="inline-flex items-center gap-1.5">
               <Tag size={13} className="text-blue-200" />
-              Up to 50% Off – Special Deals!
+              {storeSettings.announcement_2}
             </span>
             <span className="text-blue-300/50">|</span>
             <span className="inline-flex items-center gap-1.5">
               <RefreshCw size={13} className="text-blue-200" />
-              Easy Returns Within 30 Days
+              {storeSettings.announcement_3}
             </span>
           </div>
           <div className="flex w-full items-center justify-center md:hidden">
             <span className="inline-flex items-center gap-1.5 truncate">
               <Truck size={13} className="flex-shrink-0 text-blue-200" />
-              Free Delivery on Orders Over Rs. 5,000 · Cash on Delivery
+              {storeSettings.announcement_mobile}
             </span>
           </div>
           <Link
-            href="/products"
+            href={storeSettings.announcement_link || "/products"}
             aria-label="Browse deals"
             className="hidden items-center gap-0.5 text-blue-100 transition hover:text-white md:inline-flex"
           >
