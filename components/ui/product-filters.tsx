@@ -83,15 +83,21 @@ export default function ProductFilters({
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [minInput, setMinInput] = useState(currentMinPrice);
   const [maxInput, setMaxInput] = useState(currentMaxPrice);
+  const [prevQ, setPrevQ] = useState(currentQ);
+  const [prevMinPrice, setPrevMinPrice] = useState(currentMinPrice);
+  const [prevMaxPrice, setPrevMaxPrice] = useState(currentMaxPrice);
 
-  useEffect(() => {
+  if (currentQ !== prevQ) {
+    setPrevQ(currentQ);
     setSearchText(currentQ);
-  }, [currentQ]);
+  }
 
-  useEffect(() => {
+  if (currentMinPrice !== prevMinPrice || currentMaxPrice !== prevMaxPrice) {
+    setPrevMinPrice(currentMinPrice);
+    setPrevMaxPrice(currentMaxPrice);
     setMinInput(currentMinPrice);
     setMaxInput(currentMaxPrice);
-  }, [currentMinPrice, currentMaxPrice]);
+  }
 
   const buildUrl = useCallback(
     (overrides: Record<string, string>) => {

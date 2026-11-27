@@ -22,16 +22,10 @@ export default function NewCategoryPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!image) {
-      setPreviewUrl("");
-      return;
-    }
-
-    const url = URL.createObjectURL(image);
-    setPreviewUrl(url);
-
-    return () => URL.revokeObjectURL(url);
-  }, [image]);
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -54,10 +48,14 @@ export default function NewCategoryPage() {
       return;
     }
 
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(file));
     setImage(file);
   }
 
   function removeImage() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl("");
     setImage(null);
 
     if (fileInputRef.current) {

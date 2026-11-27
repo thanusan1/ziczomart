@@ -109,14 +109,10 @@ export default function EditProductForm({ product, initialImages }: Props) {
   }, [supabase, product.category_id]);
 
   useEffect(() => {
-    const urls = newImages.map((file) => URL.createObjectURL(file));
-
-    setPreviews(urls);
-
     return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
+      previews.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [newImages]);
+  }, [previews]);
 
   function handleImageSelection(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
@@ -145,8 +141,11 @@ export default function EditProductForm({ product, initialImages }: Props) {
       return true;
     });
 
+    const newUrls = validFiles.map((file) => URL.createObjectURL(file));
+
     setError("");
     setNewImages((current) => [...current, ...validFiles]);
+    setPreviews((current) => [...current, ...newUrls]);
 
     event.target.value = "";
   }
@@ -155,6 +154,11 @@ export default function EditProductForm({ product, initialImages }: Props) {
     setNewImages((current) =>
       current.filter((_, imageIndex) => imageIndex !== index),
     );
+    setPreviews((current) => {
+      const urlToRevoke = current[index];
+      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
+      return current.filter((_, imageIndex) => imageIndex !== index);
+    });
   }
 
   function removeExistingImage(id: string) {

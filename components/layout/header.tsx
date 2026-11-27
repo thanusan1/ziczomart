@@ -85,9 +85,45 @@ export default function Header() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [catOpen, setCatOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [prevPathname, setPrevPathname] = useState(pathname);
+
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    setMobileOpen(false);
+    setAccountOpen(false);
+    setCatOpen(false);
+  }
 
   const accountRef = useRef<HTMLDivElement>(null);
   const catRef = useRef<HTMLDivElement>(null);
+
+  async function loadProfileAndCart(
+    supabase: ReturnType<typeof createClient>,
+    userId: string,
+  ) {
+    const [{ data: profile }, { data: cart }, { count: wishCount }] =
+      await Promise.all([
+        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
+        supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
+        supabase
+          .from("wishlists")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId),
+      ]);
+
+    setIsAdmin(profile?.role === "admin");
+    setWishlistCount(wishCount ?? 0);
+
+    if (cart) {
+      const { count } = await supabase
+        .from("cart_items")
+        .select("*", { count: "exact", head: true })
+        .eq("cart_id", cart.id);
+      setCartCount(count ?? 0);
+    } else {
+      setCartCount(0);
+    }
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -171,40 +207,6 @@ export default function Header() {
       window.removeEventListener("ziczomart:wishlist-updated", handleCartOrWishlistEvent);
     };
   }, []);
-
-  async function loadProfileAndCart(
-    supabase: ReturnType<typeof createClient>,
-    userId: string,
-  ) {
-    const [{ data: profile }, { data: cart }, { count: wishCount }] =
-      await Promise.all([
-        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
-        supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
-        supabase
-          .from("wishlists")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", userId),
-      ]);
-
-    setIsAdmin(profile?.role === "admin");
-    setWishlistCount(wishCount ?? 0);
-
-    if (cart) {
-      const { count } = await supabase
-        .from("cart_items")
-        .select("*", { count: "exact", head: true })
-        .eq("cart_id", cart.id);
-      setCartCount(count ?? 0);
-    } else {
-      setCartCount(0);
-    }
-  }
-
-  useEffect(() => {
-    setMobileOpen(false);
-    setAccountOpen(false);
-    setCatOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {

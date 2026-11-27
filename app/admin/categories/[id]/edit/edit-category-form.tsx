@@ -30,13 +30,12 @@ export default function EditCategoryForm({ category }: { category: Category }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!image) return;
-
-    const url = URL.createObjectURL(image);
-    setPreviewUrl(url);
-
-    return () => URL.revokeObjectURL(url);
-  }, [image]);
+    return () => {
+      if (previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -56,6 +55,10 @@ export default function EditCategoryForm({ category }: { category: Category }) {
     }
 
     setError("");
+    if (previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(URL.createObjectURL(file));
     setImage(file);
   }
 

@@ -38,16 +38,12 @@ export default function NewProductPage() {
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
-  // Create and clean up image preview URLs.
+  // Clean up image preview URLs on unmount or update.
   useEffect(() => {
-    const urls = images.map((file) => URL.createObjectURL(file));
-
-    setImagePreviews(urls);
-
     return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
+      imagePreviews.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [images]);
+  }, [imagePreviews]);
 
   // Load active categories from Supabase.
   useEffect(() => {
@@ -119,8 +115,11 @@ export default function NewProductPage() {
       }
     }
 
+    const newUrls = selectedFiles.map((file) => URL.createObjectURL(file));
+
     setError("");
     setImages((previous) => [...previous, ...selectedFiles]);
+    setImagePreviews((previous) => [...previous, ...newUrls]);
 
     event.target.value = "";
   }
@@ -130,6 +129,11 @@ export default function NewProductPage() {
     setImages((previous) =>
       previous.filter((_, currentIndex) => currentIndex !== index),
     );
+    setImagePreviews((previous) => {
+      const urlToRevoke = previous[index];
+      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
+      return previous.filter((_, currentIndex) => currentIndex !== index);
+    });
   }
 
   // Create product.
