@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowLeft, Package, MapPin, CreditCard } from "lucide-react";
+import { ArrowLeft, Package, MapPin, CreditCard, XCircle } from "lucide-react";
 import OrderStatusControls from "../order-status-controls";
+import OrderRealtimeSync from "@/components/orders/order-realtime-sync";
 
 export const instant = false;
 
@@ -15,7 +16,7 @@ export default async function AdminOrderDetailsPage({ params }: Props) {
 
   const supabase = await createClient();
 
-  const { data: order, error } = await supabase
+  let { data: order, error } = await supabase
     .from("orders")
     .select(
       `
@@ -25,6 +26,7 @@ export default async function AdminOrderDetailsPage({ params }: Props) {
       status,
       payment_method,
       payment_status,
+      refund_status,
       subtotal,
       shipping_fee,
       discount,
@@ -38,6 +40,10 @@ export default async function AdminOrderDetailsPage({ params }: Props) {
       shipping_district,
       shipping_postal_code,
       customer_note,
+      cancellation_reason,
+      cancelled_at,
+      cancelled_by,
+      confirmed_at,
       created_at,
       order_items (
         id,
@@ -52,9 +58,58 @@ export default async function AdminOrderDetailsPage({ params }: Props) {
     .eq("id", id)
     .maybeSingle();
 
+  if (error && error.message.includes("column")) {
+    const fallback = await supabase
+      .from("orders")
+      .select(
+        `
+        id,
+        order_number,
+        user_id,
+        status,
+        payment_method,
+        payment_status,
+        subtotal,
+        shipping_fee,
+        discount,
+        total,
+        currency,
+        shipping_full_name,
+        shipping_phone,
+        shipping_address_line_1,
+        shipping_address_line_2,
+        shipping_city,
+        shipping_district,
+        shipping_postal_code,
+        customer_note,
+        created_at,
+        order_items (
+          id,
+          product_name,
+          product_sku,
+          unit_price,
+          quantity,
+          line_total
+        )
+      `,
+      )
+      .eq("id", id)
+      .maybeSingle();
+    order = fallback.data as typeof order;
+    error = fallback.error;
+  }
+
   if (error || !order) {
     notFound();
   }
+
+  const extOrder = order as typeof order & {
+    cancellation_reason?: string | null;
+    cancelled_at?: string | null;
+    cancelled_by?: string | null;
+    confirmed_at?: string | null;
+    refund_status?: string | null;
+  };
 
   const formatMoney = (amount: number) =>
     Number(amount).toLocaleString("en-LK", {
@@ -79,6 +134,7 @@ export default async function AdminOrderDetailsPage({ params }: Props) {
 
   return (
     <div>
+      <OrderRealtimeSync orderId={order.id} />
       <Link
         href="/admin/orders"
         className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-orange-500"
@@ -194,6 +250,48 @@ export default async function AdminOrderDetailsPage({ params }: Props) {
             currentStatus={order.status}
             currentPaymentStatus={order.payment_status}
           />
+
+          {order.status.toLowerCase() === "cancelled" && (
+            <section className="rounded-2xl border border-red-200 bg-red-50/70 p-6">
+              <div className="mb-3 flex items-center gap-2 text-[#DC2626]">
+                <XCircle size={18} />
+                <h2 className="text-base font-extrabold">
+                  Cancellation Information
+                </h2>
+              </div>
+              <dl className="space-y-2 text-xs text-slate-700">
+                <div className="flex justify-between gap-2">
+                  <dt className="font-semibold text-slate-500">Cancelled By</dt>
+                  <dd className="font-bold capitalize text-[#0F172A]">
+                    {extOrder.cancelled_by ?? "Customer / Admin"}
+                  </dd>
+                </div>
+                {extOrder.cancelled_at && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="font-semibold text-slate-500">
+                      Cancelled At
+                    </dt>
+                    <dd className="font-medium text-[#0F172A]">
+                      {new Date(extOrder.cancelled_at).toLocaleString("en-LK")}
+                    </dd>
+                  </div>
+                )}
+                {extOrder.cancellation_reason && (
+                  <div className="pt-1">
+                    <dt className="font-semibold text-slate-500">Reason</dt>
+                    <dd className="mt-1 rounded-lg bg-white p-2.5 text-slate-700">
+                      {extOrder.cancellation_reason}
+                    </dd>
+                  </div>
+                )}
+                {extOrder.refund_status === "pending_review" && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-800">
+                    Order was paid · Refund pending review
+                  </div>
+                )}
+              </dl>
+            </section>
+          )}
 
           <section className="rounded-2xl border border-gray-200 bg-white p-6">
             <h2 className="mb-5 text-lg font-bold">Order Summary</h2>

@@ -4,18 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
-import { OrderStatusBadge, PaymentStatusBadge } from "@/components/ui/badge";
-import { formatPrice } from "@/lib/utils";
-import {
-  Package,
-  ShoppingBag,
-  ArrowRight,
-  ArrowLeft,
-} from "lucide-react";
+import CustomerOrdersClient, {
+  type CustomerOrderSummary,
+} from "@/components/orders/customer-orders-client";
+import { ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "My Orders",
-  description: "View and track your ZicZo Mart orders.",
+  description: "View, track, and manage your ZicZo Mart orders.",
 };
 
 export const instant = false;
@@ -29,31 +25,140 @@ export default async function MyOrdersPage() {
 
   if (!user) redirect("/login?next=/account/orders");
 
-  const [{ data: orders, error }, { data: userReviews }] = await Promise.all([
-    supabase
-      .from("orders")
-      .select(`id, order_number, status, payment_method, payment_status,
-               total, currency, created_at, order_items(id, product_id)`)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("reviews")
-      .select("product_id")
-      .eq("user_id", user.id),
-  ]);
+  // Fetch orders (with graceful fallback if 005_order_cancellation.sql is not yet applied)
+  const ordersQuery = supabase
+    .from("orders")
+    .select(
+      `id, order_number, status, payment_method, payment_status,
+       total, currency, created_at,
+       cancellation_reason, cancelled_at, refund_status,
+       order_items(id, product_id, product_name, quantity,
+         products(product_images(storage_path, sort_order)))`,
+    )
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
 
-  if (error) throw new Error("Could not load your orders.");
+  const [{ data: ordersRaw, error: ordersErr }, { data: userReviews }] =
+    await Promise.all([
+      ordersQuery,
+      supabase.from("reviews").select("product_id").eq("user_id", user.id),
+    ]);
+
+  let ordersData = ordersRaw as unknown[] | null;
+
+  if (ordersErr) {
+    // Fallback query without 005 columns
+    const { data: fallbackRaw, error: fallbackErr } = await supabase
+      .from("orders")
+      .select(
+        `id, order_number, status, payment_method, payment_status,
+         total, currency, created_at,
+         order_items(id, product_id, product_name, quantity,
+           products(product_images(storage_path, sort_order)))`,
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (fallbackErr) throw new Error("Could not load your orders.");
+    ordersData = fallbackRaw as unknown[] | null;
+  }
 
   const reviewedProductIds = new Set(
     (userReviews ?? []).map((r) => r.product_id),
+  );
+
+  type RawOrderItemRow = {
+    id: string;
+    product_id: string | null;
+    product_name: string | null;
+    quantity: number;
+    products:
+      | {
+          product_images: { storage_path: string; sort_order: number }[] | null;
+        }
+      | {
+          product_images: { storage_path: string; sort_order: number }[] | null;
+        }[]
+      | null;
+  };
+
+  type RawOrderRow = {
+    id: string;
+    order_number: string;
+    status: string;
+    payment_method: string;
+    payment_status: string;
+    refund_status?: string | null;
+    total: number | string;
+    created_at: string;
+    cancellation_reason?: string | null;
+    cancelled_at?: string | null;
+    order_items: RawOrderItemRow[] | null;
+  };
+
+  const initialOrders: CustomerOrderSummary[] = (
+    (ordersData ?? []) as RawOrderRow[]
+  ).map((raw) => {
+    const itemsRaw = raw.order_items ?? [];
+    const items = itemsRaw.map((it) => {
+      const prodRaw = it.products;
+      const prod = Array.isArray(prodRaw) ? prodRaw[0] : prodRaw;
+      const imgs = [...(prod?.product_images ?? [])].sort(
+        (a, b) => a.sort_order - b.sort_order,
+      );
+        const imageUrl = imgs[0]
+          ? supabase.storage
+              .from("product-images")
+              .getPublicUrl(imgs[0].storage_path).data.publicUrl
+          : null;
+
+        return {
+          id: it.id,
+          productId: it.product_id ?? null,
+          productName: it.product_name ?? "Product",
+          quantity: Number(it.quantity ?? 1),
+          imageUrl,
+        };
+      });
+
+      const isDelivered =
+        String(raw.status ?? "")
+          .trim()
+          .toLowerCase() === "delivered";
+      const hasUnreviewed =
+        isDelivered &&
+        items.some((it) => it.productId && !reviewedProductIds.has(it.productId));
+      const allReviewed =
+        isDelivered &&
+        items.length > 0 &&
+        items.every(
+          (it) => !it.productId || reviewedProductIds.has(it.productId),
+        );
+
+      return {
+        id: raw.id,
+        orderNumber: raw.order_number,
+        status: raw.status,
+        paymentMethod: raw.payment_method,
+        paymentStatus: raw.payment_status,
+        refundStatus: raw.refund_status ?? "none",
+        total: Number(raw.total),
+        createdAt: raw.created_at,
+        cancellationReason: raw.cancellation_reason ?? null,
+        cancelledAt: raw.cancelled_at ?? null,
+        items,
+        hasUnreviewedDeliveredItems: hasUnreviewed,
+        allDeliveredItemsReviewed: allReviewed,
+      };
+    },
   );
 
   return (
     <>
       <Header />
 
-      <main className="min-h-screen bg-gray-50">
-        <div className="border-b border-gray-200 bg-white">
+      <main className="min-h-screen bg-[#F8FAFC]">
+        <div className="border-b border-[#E2E8F0] bg-white">
           <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
             <Breadcrumb
               items={[
@@ -63,16 +168,17 @@ export default async function MyOrdersPage() {
             />
             <div className="mt-3 flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-extrabold text-gray-900">
+                <h1 className="text-2xl font-extrabold text-[#0F172A]">
                   My Orders
                 </h1>
-                <p className="mt-1 text-sm text-gray-500">
-                  {orders?.length ?? 0} order{orders?.length !== 1 ? "s" : ""}
+                <p className="mt-1 text-sm text-slate-500">
+                  {initialOrders.length} order
+                  {initialOrders.length !== 1 ? "s" : ""}
                 </p>
               </div>
               <Link
                 href="/account"
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-orange-500"
+                className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-[#2563EB]"
               >
                 <ArrowLeft size={14} /> My Account
               </Link>
@@ -81,125 +187,10 @@ export default async function MyOrdersPage() {
         </div>
 
         <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-          {!orders || orders.length === 0 ? (
-            <div className="flex flex-col items-center rounded-xl border border-dashed border-gray-200 bg-white px-6 py-20 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50">
-                <ShoppingBag size={28} className="text-orange-400" />
-              </div>
-              <h2 className="mt-5 text-xl font-bold text-gray-900">
-                No orders yet
-              </h2>
-              <p className="mt-2 text-sm text-gray-500">
-                Your purchases will appear here after you place an order.
-              </p>
-              <Link
-                href="/products"
-                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white hover:bg-orange-600"
-              >
-                Start Shopping <ArrowRight size={15} />
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {orders.map((order) => (
-                <div
-                  key={order.id}
-                  className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm transition hover:border-gray-200 hover:shadow-md"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50">
-                        <Package size={18} className="text-orange-500" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-gray-900">
-                          {order.order_number}
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500">
-                          {new Date(order.created_at).toLocaleDateString(
-                            "en-LK",
-                            {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <OrderStatusBadge status={order.status} />
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-3 gap-3 border-t border-gray-100 pt-4 text-sm">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                        Items
-                      </p>
-                      <p className="mt-1 font-semibold text-gray-800">
-                        {order.order_items.length}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                        Payment
-                      </p>
-                      <p className="mt-1 font-semibold uppercase text-gray-800">
-                        {order.payment_method}
-                      </p>
-                      <PaymentStatusBadge
-                        status={order.payment_status}
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                        Total
-                      </p>
-                      <p className="mt-1 font-bold text-gray-900">
-                        {formatPrice(Number(order.total))}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
-                    <Link
-                      href={`/account/orders/${order.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-500"
-                    >
-                      View Details <ArrowRight size={14} />
-                    </Link>
-
-                    {order.status.toLowerCase() === "delivered" &&
-                      (() => {
-                        const items = order.order_items as {
-                          id: string;
-                          product_id: string | null;
-                        }[];
-                        const hasUnreviewed = items.some(
-                          (it) =>
-                            it.product_id &&
-                            !reviewedProductIds.has(it.product_id),
-                        );
-                        return hasUnreviewed ? (
-                          <Link
-                            href={`/account/orders/${order.id}`}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3.5 py-2 text-xs font-bold text-[#2563EB] transition hover:bg-blue-100"
-                          >
-                            Write a Review
-                          </Link>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-[#16A34A]">
-                            Reviewed
-                          </span>
-                        );
-                      })()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <CustomerOrdersClient
+            userId={user.id}
+            initialOrders={initialOrders}
+          />
         </div>
       </main>
 

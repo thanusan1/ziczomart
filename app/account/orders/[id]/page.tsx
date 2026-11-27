@@ -6,6 +6,8 @@ import Footer from "@/components/layout/footer";
 import Breadcrumb from "@/components/ui/breadcrumb";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/ui/badge";
 import OrderItemReviewAction from "@/components/orders/order-item-review-action";
+import CancelOrderButton from "@/components/orders/cancel-order-button";
+import OrderRealtimeSync from "@/components/orders/order-realtime-sync";
 import { formatPrice } from "@/lib/utils";
 import {
   CheckCircle,
@@ -41,19 +43,38 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: order, error } = await supabase
+  let { data: order, error } = await supabase
     .from("orders")
     .select(`id, order_number, status, payment_method, payment_status,
              subtotal, shipping_fee, discount, total, currency,
              shipping_full_name, shipping_phone,
              shipping_address_line_1, shipping_address_line_2,
              shipping_city, shipping_district, shipping_postal_code,
+             cancellation_reason, cancelled_at, cancelled_by, confirmed_at, refund_status,
              created_at,
              order_items(id, product_id, product_name, product_sku, unit_price, quantity, line_total,
                products(slug, product_images(storage_path, sort_order)))`)
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
+
+  if (error && error.message.includes("column")) {
+    const fallback = await supabase
+      .from("orders")
+      .select(`id, order_number, status, payment_method, payment_status,
+               subtotal, shipping_fee, discount, total, currency,
+               shipping_full_name, shipping_phone,
+               shipping_address_line_1, shipping_address_line_2,
+               shipping_city, shipping_district, shipping_postal_code,
+               created_at,
+               order_items(id, product_id, product_name, product_sku, unit_price, quantity, line_total,
+                 products(slug, product_images(storage_path, sort_order)))`)
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    order = fallback.data as typeof order;
+    error = fallback.error;
+  }
 
   if (error || !order) notFound();
 
@@ -85,13 +106,22 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
   );
   const isCancelled = order.status === "cancelled";
 
+  const extOrder = order as typeof order & {
+    cancellation_reason?: string | null;
+    cancelled_at?: string | null;
+    cancelled_by?: string | null;
+    confirmed_at?: string | null;
+    refund_status?: string | null;
+  };
+
   return (
     <>
+      <OrderRealtimeSync orderId={order.id} />
       <Header />
 
-      <main className="min-h-screen bg-gray-50">
+      <main className="min-h-screen bg-[#F8FAFC]">
         {/* Header */}
-        <div className="border-b border-gray-200 bg-white">
+        <div className="border-b border-[#E2E8F0] bg-white">
           <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
             <Breadcrumb
               items={[
@@ -102,10 +132,10 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
             />
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h1 className="text-xl font-extrabold text-gray-900 sm:text-2xl">
+                <h1 className="text-xl font-extrabold text-[#0F172A] sm:text-2xl">
                   {order.order_number}
                 </h1>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-slate-500">
                   Placed on{" "}
                   {new Date(order.created_at).toLocaleDateString("en-LK", {
                     year: "numeric", month: "long", day: "numeric",
@@ -113,7 +143,15 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
                   })}
                 </p>
               </div>
-              <OrderStatusBadge status={order.status} />
+              <div className="flex flex-wrap items-center gap-2.5">
+                <OrderStatusBadge status={order.status} />
+                <CancelOrderButton
+                  orderId={order.id}
+                  orderNumber={order.order_number}
+                  status={order.status}
+                  paymentStatus={order.payment_status}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -142,14 +180,61 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
             </div>
 
             {isCancelled ? (
-              <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
-                <XCircle size={20} className="mt-0.5 flex-shrink-0 text-red-500" />
-                <div>
-                  <p className="font-bold text-red-800">Order Cancelled</p>
-                  <p className="mt-1 text-sm text-red-600">
-                    This order has been cancelled. Contact us if you need assistance.
-                  </p>
+              <div className="space-y-4">
+                <div className="relative">
+                  {/* Step 1: Order Placed */}
+                  <div className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#16A34A] text-white">
+                        <CheckCircle size={16} />
+                      </div>
+                      <div className="my-1 min-h-8 w-0.5 flex-1 bg-red-300" />
+                    </div>
+                    <div className="pb-5">
+                      <p className="text-sm font-semibold text-[#0F172A]">
+                        Order Placed
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {new Date(order.created_at).toLocaleString("en-LK")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Step 2: Cancelled */}
+                  <div className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#DC2626] text-white ring-4 ring-red-100">
+                        <XCircle size={16} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-[#DC2626]">
+                        Cancelled
+                        {extOrder.cancelled_by && (
+                          <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-[#DC2626]">
+                            By {extOrder.cancelled_by === "customer" ? "Customer" : "Admin"}
+                          </span>
+                        )}
+                      </p>
+                      {extOrder.cancelled_at && (
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {new Date(extOrder.cancelled_at).toLocaleString("en-LK")}
+                        </p>
+                      )}
+                      {extOrder.cancellation_reason && (
+                        <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-slate-700">
+                          Reason: {extOrder.cancellation_reason}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {extOrder.refund_status === "pending_review" && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs font-medium text-amber-800">
+                    Payment Status: Paid · <span className="font-bold">Refund pending review</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="relative">
@@ -162,7 +247,7 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
                       <div className="flex flex-col items-center">
                         <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold transition ${
                           done ? "bg-green-500 text-white" :
-                          current ? "bg-orange-500 text-white ring-4 ring-orange-100" :
+                          current ? "bg-[#2563EB] text-white ring-4 ring-blue-100" :
                           "border-2 border-gray-200 bg-white text-gray-400"
                         }`}>
                           {done ? <CheckCircle size={16} /> : i + 1}
@@ -173,12 +258,17 @@ export default async function OrderDetailsPage({ params, searchParams }: Props) 
                       </div>
                       <div className="pb-6">
                         <p className={`text-sm font-semibold ${
-                          done ? "text-green-700" : current ? "text-orange-600" : "text-gray-400"
+                          done ? "text-green-700" : current ? "text-[#2563EB]" : "text-gray-400"
                         }`}>
                           {step.title}
-                          {current && <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-600">Current</span>}
+                          {current && <span className="ml-2 rounded-full bg-[#EFF6FF] px-2 py-0.5 text-xs text-[#2563EB]">Current</span>}
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500">{step.desc}</p>
+                        {step.status === "confirmed" && extOrder.confirmed_at && (
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            Confirmed on {new Date(extOrder.confirmed_at).toLocaleString("en-LK")}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
