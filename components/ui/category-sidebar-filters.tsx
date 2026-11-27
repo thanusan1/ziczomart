@@ -24,6 +24,8 @@ export interface CategorySidebarFiltersProps {
   outOfStockCount: number;
   priceBounds: { min: number; max: number };
   brands?: { name: string; count: number }[];
+  baseCategoryPath?: string;
+  activeSubSlug?: string;
   onCloseMobile?: () => void;
 }
 
@@ -82,6 +84,8 @@ export default function CategorySidebarFilters({
   outOfStockCount,
   priceBounds,
   brands = [],
+  baseCategoryPath,
+  activeSubSlug,
   onCloseMobile,
 }: CategorySidebarFiltersProps) {
   const router = useRouter();
@@ -89,7 +93,7 @@ export default function CategorySidebarFilters({
   const searchParams = useSearchParams();
 
   const currentQ = searchParams.get("q") ?? "";
-  const currentSub = searchParams.get("sub") ?? "";
+  const currentSub = activeSubSlug ?? (searchParams.get("sub") ?? "");
   const currentBrand = searchParams.get("brand") ?? "";
   const currentSort = searchParams.get("sort") ?? "";
   const currentMinPrice = searchParams.get("minPrice") ?? "";
@@ -141,6 +145,17 @@ export default function CategorySidebarFilters({
   }
 
   function handleSelectCategory(slug: string) {
+    if (baseCategoryPath) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("page");
+      params.delete("sub");
+      const qs = params.toString();
+      const targetPath = slug ? `${baseCategoryPath}/${slug}` : baseCategoryPath;
+      router.push(qs ? `${targetPath}?${qs}` : targetPath, { scroll: false });
+      onCloseMobile?.();
+      return;
+    }
+
     pushFilter({ sub: slug });
     onCloseMobile?.();
   }

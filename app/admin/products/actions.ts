@@ -120,3 +120,100 @@ export async function deleteProduct(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/products");
 }
+
+export async function validateProductCategorySelection(input: {
+  mainCategoryId: string;
+  subcategoryId?: string;
+  allowInactiveId?: string | null;
+}): Promise<
+  | { ok: true; resolvedCategoryId: string | null }
+  | { ok: false; error: string }
+> {
+  try {
+    const supabase = await verifyAdmin();
+    const mainId = input.mainCategoryId.trim();
+    const subId = (input.subcategoryId ?? "").trim();
+
+    if (!mainId && !subId) {
+      return { ok: true, resolvedCategoryId: null };
+    }
+
+    if (!mainId) {
+      return { ok: false, error: "Please select a Main Category." };
+    }
+
+    const { data: mainCat, error: mainErr } = await supabase
+      .from("categories")
+      .select("id, parent_id, is_active")
+      .eq("id", mainId)
+      .single();
+
+    if (mainErr || !mainCat) {
+      return { ok: false, error: "Selected Main Category does not exist." };
+    }
+
+    if (mainCat.parent_id !== null) {
+      return {
+        ok: false,
+        error: "Selected Main Category cannot be a subcategory.",
+      };
+    }
+
+    if (!mainCat.is_active && mainCat.id !== input.allowInactiveId) {
+      // Allow inactive main category only if editing a product whose subcategory is under it
+      if (!subId || subId !== input.allowInactiveId) {
+        return { ok: false, error: "Selected Main Category is inactive." };
+      }
+    }
+
+    if (subId) {
+      const { data: subCat, error: subErr } = await supabase
+        .from("categories")
+        .select("id, parent_id, is_active")
+        .eq("id", subId)
+        .single();
+
+      if (subErr || !subCat) {
+        return { ok: false, error: "Selected Subcategory does not exist." };
+      }
+
+      if (subCat.parent_id !== mainId) {
+        return {
+          ok: false,
+          error:
+            "Invalid category combination: the selected subcategory does not belong to the selected main category.",
+        };
+      }
+
+      if (!subCat.is_active && subCat.id !== input.allowInactiveId) {
+        return { ok: false, error: "Selected Subcategory is inactive." };
+      }
+
+      return { ok: true, resolvedCategoryId: subCat.id };
+    }
+
+    // Check if the main category has active subcategories; if so, require one
+    const { count } = await supabase
+      .from("categories")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_id", mainId)
+      .eq("is_active", true);
+
+    if ((count ?? 0) > 0 && mainId !== input.allowInactiveId) {
+      return {
+        ok: false,
+        error: "Please select a Subcategory for this Main Category.",
+      };
+    }
+
+    return { ok: true, resolvedCategoryId: mainId };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Unable to validate category selection.",
+    };
+  }
+}

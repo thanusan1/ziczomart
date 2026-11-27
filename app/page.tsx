@@ -112,10 +112,9 @@ export default async function HomePage() {
   ] = await Promise.all([
     supabase
       .from("categories")
-      .select("id, name, slug, image_url")
+      .select("*")
       .eq("is_active", true)
-      .order("sort_order", { ascending: true })
-      .limit(8),
+      .order("sort_order", { ascending: true }),
 
     supabase
       .from("products")
@@ -166,7 +165,15 @@ export default async function HomePage() {
     getStoreSettings(supabase),
   ]);
 
-  const categories = dedupeById(categoriesRaw ?? []).slice(0, 8);
+  const categories = dedupeById(
+    ((categoriesRaw ?? []) as {
+      id: string;
+      name: string;
+      slug: string;
+      image_url: string | null;
+      parent_id?: string | null;
+    }[]).filter((c) => !c.parent_id),
+  ).slice(0, 8);
 
   const allFetchedProducts = dedupeById([
     ...((pinnedRaw ?? []) as RawProduct[]),

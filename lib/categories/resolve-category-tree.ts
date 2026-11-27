@@ -5,6 +5,8 @@ export type CategoryRow = {
   name: string;
   slug: string;
   parent_id?: string | null;
+  description?: string | null;
+  image_url?: string | null;
   sort_order?: number;
   is_active?: boolean;
 };
@@ -40,12 +42,18 @@ export async function resolveCategoryTree(
     .from("categories")
     .select("*")
     .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
 
   const allCategories = (activeCategories ?? []) as CategoryRow[];
   const hasParentIdColumn = allCategories.some((c) => "parent_id" in c);
 
-  const mainCategory = allCategories.find(options.matchMain) ?? null;
+  // When parent_id exists, only match top-level main categories (parent_id == null)
+  const mainPool = hasParentIdColumn
+    ? allCategories.filter((c) => !c.parent_id)
+    : allCategories;
+
+  const mainCategory = mainPool.find(options.matchMain) ?? null;
 
   let childCategories: CategoryRow[] = [];
 

@@ -93,7 +93,7 @@ export default async function ProductsPage({ searchParams }: Props) {
   ] = await Promise.all([
     supabase
       .from("categories")
-      .select("id, name, slug")
+      .select("*")
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
     supabase
@@ -134,12 +134,31 @@ export default async function ProductsPage({ searchParams }: Props) {
     max: maxBound > 0 ? Math.ceil(maxBound) : 100000,
   };
 
-  const categories: FilterCategory[] = (categoriesRaw ?? []).map((cat) => ({
-    id: cat.id,
-    name: cat.name,
-    slug: cat.slug,
-    count: categoryCountMap.get(cat.id) ?? 0,
-  }));
+  const allActiveCategories = (categoriesRaw ?? []) as {
+    id: string;
+    name: string;
+    slug: string;
+    parent_id?: string | null;
+  }[];
+  const mainActiveCategories = allActiveCategories.filter((c) => !c.parent_id);
+  const subActiveCategories = allActiveCategories.filter((c) =>
+    Boolean(c.parent_id),
+  );
+
+  const categories: FilterCategory[] = mainActiveCategories.map((cat) => {
+    const childIds = subActiveCategories
+      .filter((s) => s.parent_id === cat.id)
+      .map((s) => s.id);
+    const totalCount =
+      (categoryCountMap.get(cat.id) ?? 0) +
+      childIds.reduce((sum, cid) => sum + (categoryCountMap.get(cid) ?? 0), 0);
+    return {
+      id: cat.id,
+      name: cat.name,
+      slug: cat.slug,
+      count: totalCount,
+    };
+  });
 
   /* Compute real product ratings from published reviews */
   const ratingAgg = new Map<string, { sum: number; count: number }>();
@@ -206,9 +225,21 @@ export default async function ProductsPage({ searchParams }: Props) {
     redirect(qs ? `${targetPath}?${qs}` : targetPath);
   }
 
-  const selectedCategoryIds = categories
-    .filter((c) => selectedSlugs.includes(c.slug))
-    .map((c) => c.id);
+  const selectedCategoryIds = Array.from(
+    new Set(
+      allActiveCategories
+        .filter((c) => selectedSlugs.includes(c.slug))
+        .flatMap((c) => {
+          if (!c.parent_id) {
+            const childIds = subActiveCategories
+              .filter((s) => s.parent_id === c.id)
+              .map((s) => s.id);
+            return [c.id, ...childIds];
+          }
+          return [c.id];
+        }),
+    ),
+  );
 
   /* ── 4. Build Supabase products query ───────────────────────── */
   let query = supabase

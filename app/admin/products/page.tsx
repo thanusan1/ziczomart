@@ -8,27 +8,38 @@ export const instant = false;
 export default async function AdminProductsPage() {
   const supabase = await createClient();
 
-  const { data: products, error } = await supabase
-    .from("products")
-    .select(
-      `
-      id,
-      name,
-      sku,
-      price,
-      stock_quantity,
-      is_active,
-      created_at,
-      categories (
-        name
-      ),
-      product_images (
-        storage_path,
-        sort_order
+  const [{ data: products, error }, { data: allCategories }] = await Promise.all([
+    supabase
+      .from("products")
+      .select(
+        `
+        id,
+        name,
+        sku,
+        price,
+        stock_quantity,
+        is_active,
+        category_id,
+        created_at,
+        categories (
+          id,
+          name
+        ),
+        product_images (
+          storage_path,
+          sort_order
+        )
+      `,
       )
-    `,
-    )
-    .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+    supabase.from("categories").select("*"),
+  ]);
+
+  const categoryMap = new Map(
+    ((allCategories ?? []) as { id: string; name: string; parent_id?: string | null }[]).map(
+      (c) => [c.id, c],
+    ),
+  );
 
   return (
     <div>
@@ -99,6 +110,16 @@ export default async function AdminProductsPage() {
                     ? categoriesData[0]?.name
                     : categoriesData?.name;
 
+                  const catNode = product.category_id
+                    ? categoryMap.get(product.category_id)
+                    : null;
+                  const parentNode = catNode?.parent_id
+                    ? categoryMap.get(catNode.parent_id)
+                    : null;
+                  const categoryLabel = parentNode
+                    ? `${parentNode.name} → ${catNode?.name}`
+                    : (catNode?.name ?? category ?? "Uncategorized");
+
                   return (
                     <tr
                       key={product.id}
@@ -126,7 +147,7 @@ export default async function AdminProductsPage() {
 
                       <td className="px-5 py-4">
                         <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">
-                          {category || "Uncategorized"}
+                          {categoryLabel}
                         </span>
                       </td>
 

@@ -5,19 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowLeft, ImagePlus, Loader2, X } from "lucide-react";
-
-type Category = {
-  id: string;
-  name: string;
-  is_active: boolean;
-  sort_order: number;
-};
+import ProductCategorySelector, {
+  type SelectableCategory,
+} from "@/components/admin/product-category-selector";
+import { validateProductCategorySelection } from "../actions";
 
 export default function NewProductPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<SelectableCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [categoryError, setCategoryError] = useState("");
 
@@ -26,7 +23,8 @@ export default function NewProductPage() {
   const [success, setSuccess] = useState("");
 
   const [name, setName] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [mainCategoryId, setMainCategoryId] = useState("");
+  const [subcategoryId, setSubcategoryId] = useState("");
   const [sku, setSku] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -61,7 +59,7 @@ export default function NewProductPage() {
 
       const { data, error } = await supabase
         .from("categories")
-        .select("id, name, is_active, sort_order")
+        .select("*")
         .order("sort_order", { ascending: true });
 
       if (cancelled) return;
@@ -72,7 +70,7 @@ export default function NewProductPage() {
         setCategoryError(`Unable to load categories: ${error.message}`);
         setCategories([]);
       } else {
-        const activeCategories = (data ?? []).filter(
+        const activeCategories = ((data ?? []) as SelectableCategory[]).filter(
           (category) => category.is_active === true,
         );
 
@@ -80,7 +78,7 @@ export default function NewProductPage() {
 
         if (activeCategories.length === 0) {
           setCategoryError(
-            "No active categories were returned. Check that Electronics is active in Supabase.",
+            "No active categories were returned. Check that categories are active in Supabase.",
           );
         }
       }
@@ -169,15 +167,20 @@ export default function NewProductPage() {
       return;
     }
 
-    if (
-      categoryId &&
-      !categories.some((category) => category.id === categoryId)
-    ) {
-      setError("Please select a valid active category.");
+    setSaving(true);
+
+    const catValidation = await validateProductCategorySelection({
+      mainCategoryId,
+      subcategoryId,
+    });
+
+    if (!catValidation.ok) {
+      setError(catValidation.error);
+      setSaving(false);
       return;
     }
 
-    setSaving(true);
+    const resolvedCategoryId = catValidation.resolvedCategoryId;
 
     let productId: string | null = null;
     const uploadedPaths: string[] = [];
@@ -201,7 +204,7 @@ export default function NewProductPage() {
         .insert({
           name: name.trim(),
           slug,
-          category_id: categoryId || null,
+          category_id: resolvedCategoryId,
           sku: sku.trim() || null,
           description: description.trim() || null,
           price: numericPrice,
@@ -227,7 +230,7 @@ export default function NewProductPage() {
           .insert({
             name: name.trim(),
             slug,
-            category_id: categoryId || null,
+            category_id: resolvedCategoryId,
             sku: sku.trim() || null,
             description: description.trim() || null,
             price: numericPrice,
@@ -387,40 +390,19 @@ export default function NewProductPage() {
 
             {/* Category */}
             <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">
-                Category
-              </label>
-
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                disabled={loadingCategories}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 outline-none focus:border-orange-500 disabled:bg-gray-100"
-              >
-                <option value="">
-                  {loadingCategories
-                    ? "Loading categories..."
-                    : "Select a category"}
-                </option>
-
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+              <ProductCategorySelector
+                categories={categories}
+                loading={loadingCategories}
+                mainCategoryId={mainCategoryId}
+                subcategoryId={subcategoryId}
+                onMainCategoryChange={setMainCategoryId}
+                onSubcategoryChange={setSubcategoryId}
+              />
 
               {categoryError && (
                 <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
                   {categoryError}
                 </div>
-              )}
-
-              {!loadingCategories && categories.length > 0 && (
-                <p className="mt-2 text-xs text-green-600">
-                  {categories.length} active categor
-                  {categories.length === 1 ? "y" : "ies"} loaded.
-                </p>
               )}
             </div>
 

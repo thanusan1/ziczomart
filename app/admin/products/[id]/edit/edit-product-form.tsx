@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowLeft, ImagePlus, Loader2, X } from "lucide-react";
+import ProductCategorySelector, {
+  type SelectableCategory,
+} from "@/components/admin/product-category-selector";
+import { validateProductCategorySelection } from "../../actions";
 
 type Product = {
   id: string;
@@ -30,12 +34,6 @@ type ProductImage = {
   url: string;
 };
 
-type Category = {
-  id: string;
-  name: string;
-  is_active: boolean;
-};
-
 type Props = {
   product: Product;
   initialImages: ProductImage[];
@@ -46,7 +44,8 @@ export default function EditProductForm({ product, initialImages }: Props) {
   const supabase = createClient();
 
   const [name, setName] = useState(product.name);
-  const [categoryId, setCategoryId] = useState(product.category_id ?? "");
+  const [mainCategoryId, setMainCategoryId] = useState("");
+  const [subcategoryId, setSubcategoryId] = useState("");
   const [sku, setSku] = useState(product.sku ?? "");
   const [description, setDescription] = useState(product.description ?? "");
   const [price, setPrice] = useState(String(product.price));
@@ -65,7 +64,7 @@ export default function EditProductForm({ product, initialImages }: Props) {
     Boolean(product.is_new_arrival),
   );
 
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<SelectableCategory[]>([]);
   const [existingImages, setExistingImages] =
     useState<ProductImage[]>(initialImages);
 
@@ -80,20 +79,34 @@ export default function EditProductForm({ product, initialImages }: Props) {
     async function loadCategories() {
       const { data, error } = await supabase
         .from("categories")
-        .select("id, name, is_active")
+        .select("*")
         .order("sort_order", { ascending: true });
 
       if (error) {
         setError("Unable to load product categories.");
       } else {
-        setCategories(data ?? []);
+        const list = (data ?? []) as SelectableCategory[];
+        setCategories(list);
+
+        if (product.category_id) {
+          const assigned = list.find((c) => c.id === product.category_id);
+          if (assigned) {
+            if (assigned.parent_id) {
+              setMainCategoryId(assigned.parent_id);
+              setSubcategoryId(assigned.id);
+            } else {
+              setMainCategoryId(assigned.id);
+              setSubcategoryId("");
+            }
+          }
+        }
       }
 
       setLoadingCategories(false);
     }
 
     loadCategories();
-  }, [supabase]);
+  }, [supabase, product.category_id]);
 
   useEffect(() => {
     const urls = newImages.map((file) => URL.createObjectURL(file));
@@ -157,8 +170,8 @@ export default function EditProductForm({ product, initialImages }: Props) {
       return;
     }
 
-    if (!categoryId) {
-      setError("Please select a category.");
+    if (!mainCategoryId) {
+      setError("Please select a Main Category.");
       return;
     }
 
@@ -188,6 +201,20 @@ export default function EditProductForm({ product, initialImages }: Props) {
 
     setSaving(true);
 
+    const catValidation = await validateProductCategorySelection({
+      mainCategoryId,
+      subcategoryId,
+      allowInactiveId: product.category_id,
+    });
+
+    if (!catValidation.ok) {
+      setError(catValidation.error);
+      setSaving(false);
+      return;
+    }
+
+    const resolvedCategoryId = catValidation.resolvedCategoryId;
+
     const uploadedPaths: string[] = [];
 
     try {
@@ -196,7 +223,7 @@ export default function EditProductForm({ product, initialImages }: Props) {
         .from("products")
         .update({
           name: name.trim(),
-          category_id: categoryId,
+          category_id: resolvedCategoryId,
           sku: sku.trim() || null,
           description: description.trim() || null,
           price: parsedPrice,
@@ -220,7 +247,7 @@ export default function EditProductForm({ product, initialImages }: Props) {
           .from("products")
           .update({
             name: name.trim(),
-            category_id: categoryId,
+            category_id: resolvedCategoryId,
             sku: sku.trim() || null,
             description: description.trim() || null,
             price: parsedPrice,
@@ -328,10 +355,6 @@ export default function EditProductForm({ product, initialImages }: Props) {
     }
   }
 
-  const availableCategories = categories.filter(
-    (category) => category.is_active || category.id === categoryId,
-  );
-
   return (
     <form
       onSubmit={handleSubmit}
@@ -348,7 +371,7 @@ export default function EditProductForm({ product, initialImages }: Props) {
         <h2 className="text-lg font-bold text-gray-900">Product Information</h2>
 
         <div className="mt-5 grid gap-5 md:grid-cols-2">
-          <div>
+          <div className="md:col-span-2">
             <label className="mb-2 block text-sm font-semibold text-gray-700">
               Product Name *
             </label>
@@ -361,31 +384,18 @@ export default function EditProductForm({ product, initialImages }: Props) {
             />
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-gray-700">
-              Category *
-            </label>
-
-            <select
+          <div className="md:col-span-2">
+            <ProductCategorySelector
+              categories={categories}
+              loading={loadingCategories}
+              mainCategoryId={mainCategoryId}
+              subcategoryId={subcategoryId}
+              onMainCategoryChange={setMainCategoryId}
+              onSubcategoryChange={setSubcategoryId}
+              allowInactiveCurrent
+              currentCategoryId={product.category_id}
               required
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              disabled={loadingCategories}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 outline-none focus:border-orange-500"
-            >
-              <option value="">
-                {loadingCategories
-                  ? "Loading categories..."
-                  : "Select a category"}
-              </option>
-
-              {availableCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                  {!category.is_active ? " (Inactive)" : ""}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>
