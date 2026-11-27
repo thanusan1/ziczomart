@@ -322,7 +322,17 @@ export default async function HomePage() {
               {categories.map((cat) => (
                 <Link
                   key={cat.id}
-                  href={`/products?category=${cat.slug}`}
+                  href={
+                    cat.name.toLowerCase() === "electronics" ||
+                    cat.slug.toLowerCase().startsWith("electronics")
+                      ? "/categories/electronics"
+                      : cat.name.toLowerCase() === "home & kitchen" ||
+                          cat.name.toLowerCase() === "home and kitchen" ||
+                          cat.slug.toLowerCase().startsWith("home-kitchen") ||
+                          cat.slug.toLowerCase().startsWith("home-and-kitchen")
+                        ? "/categories/home-kitchen"
+                        : `/categories/${cat.slug}`
+                  }
                   className="group flex flex-col overflow-hidden rounded-xl border border-gray-200/90 bg-white p-2.5 text-center shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
                 >
                   <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-50">

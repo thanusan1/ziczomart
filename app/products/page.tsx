@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
@@ -172,6 +173,39 @@ export default async function ProductsPage({ searchParams }: Props) {
   const selectedSlugs = categoryParam
     ? categoryParam.split(",").filter(Boolean)
     : [];
+
+  const singleSlugLower =
+    selectedSlugs.length === 1 ? selectedSlugs[0].toLowerCase() : "";
+  const isSingleElectronics = singleSlugLower.startsWith("electronics");
+  const isSingleHomeKitchen =
+    singleSlugLower.startsWith("home-kitchen") ||
+    singleSlugLower.startsWith("home-and-kitchen");
+
+  if (
+    selectedSlugs.length === 1 &&
+    !wishlistParam &&
+    !deals
+  ) {
+    const forward = new URLSearchParams();
+    if (q) forward.set("q", q);
+    if (sort) forward.set("sort", sort);
+    if (featured) forward.set("featured", featured);
+    if (minPriceParam) forward.set("minPrice", minPriceParam);
+    if (maxPriceParam) forward.set("maxPrice", maxPriceParam);
+    if (ratingParam) forward.set("rating", ratingParam);
+    if (stockParam) forward.set("stock", stockParam);
+    if (discountParam) forward.set("discount", discountParam);
+    if (sp.page) forward.set("page", sp.page);
+    if (sp.limit) forward.set("limit", sp.limit);
+    const qs = forward.toString();
+    const targetPath = isSingleElectronics
+      ? "/categories/electronics"
+      : isSingleHomeKitchen
+        ? "/categories/home-kitchen"
+        : `/categories/${selectedSlugs[0]}`;
+    redirect(qs ? `${targetPath}?${qs}` : targetPath);
+  }
+
   const selectedCategoryIds = categories
     .filter((c) => selectedSlugs.includes(c.slug))
     .map((c) => c.id);
@@ -292,7 +326,11 @@ export default async function ProductsPage({ searchParams }: Props) {
     );
   }
 
-  if (sort === "popularity") {
+  if (sort === "name_asc") {
+    mapped.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (sort === "name_desc") {
+    mapped.sort((a, b) => b.name.localeCompare(a.name));
+  } else if (sort === "popularity") {
     mapped.sort((a, b) => {
       const revDiff = (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
       if (revDiff !== 0) return revDiff;

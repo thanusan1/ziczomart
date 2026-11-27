@@ -3,9 +3,16 @@ import {
   Truck,
   RefreshCw,
   Headphones,
+  type LucideIcon,
 } from "lucide-react";
 
-const BENEFITS = [
+export type TrustBenefitItem = {
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+};
+
+const DEFAULT_BENEFITS: TrustBenefitItem[] = [
   {
     icon: ShieldCheck,
     title: "Secure Payments",
@@ -28,14 +35,18 @@ const BENEFITS = [
   },
 ];
 
-export default function TrustStrip() {
+export default function TrustStrip({
+  items = DEFAULT_BENEFITS,
+}: {
+  items?: TrustBenefitItem[];
+}) {
   return (
     <section
       aria-label="Store benefits"
       className="border-y border-gray-200/80 bg-white"
     >
       <div className="mx-auto grid max-w-7xl grid-cols-2 divide-y divide-gray-100 px-4 sm:px-6 md:grid-cols-4 md:divide-x md:divide-y-0">
-        {BENEFITS.map(({ icon: Icon, title, desc }) => (
+        {items.map(({ icon: Icon, title, desc }) => (
           <div
             key={title}
             className="flex items-center gap-3.5 px-3 py-5 sm:px-5"

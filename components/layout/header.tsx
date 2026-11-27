@@ -30,6 +30,23 @@ type CategoryNav = {
   slug: string;
 };
 
+function getCategoryHref(cat: CategoryNav): string {
+  const lowerName = cat.name.toLowerCase();
+  const lowerSlug = cat.slug.toLowerCase();
+  if (lowerName === "electronics" || lowerSlug.startsWith("electronics")) {
+    return "/categories/electronics";
+  }
+  if (
+    lowerName === "home & kitchen" ||
+    lowerName === "home and kitchen" ||
+    lowerSlug.startsWith("home-kitchen") ||
+    lowerSlug.startsWith("home-and-kitchen")
+  ) {
+    return "/categories/home-kitchen";
+  }
+  return `/categories/${cat.slug}`;
+}
+
 const FALLBACK_NAV = [
   { label: "Home", href: "/" },
   { label: "Products", href: "/products" },
@@ -65,13 +82,15 @@ export default function Header() {
         supabase.auth.getSession(),
         supabase
           .from("categories")
-          .select("id, name, slug")
+          .select("*")
           .eq("is_active", true)
-          .order("sort_order", { ascending: true })
-          .limit(7),
+          .order("sort_order", { ascending: true }),
       ]);
 
-      setCategories(cats ?? []);
+      const topLevelCats = ((cats ?? []) as (CategoryNav & { parent_id?: string | null })[]).filter(
+        (c) => !c.parent_id,
+      );
+      setCategories(topLevelCats);
 
       if (sessionData.session?.user) {
         setEmail(sessionData.session.user.email ?? null);
@@ -434,9 +453,12 @@ export default function Header() {
 
         {/* ── Secondary Category Navigation Bar (Desktop) ─────────── */}
         <div className="hidden border-t border-gray-100 bg-white md:block">
-          <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-2 sm:px-6">
+          <div
+            ref={catRef}
+            className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-2 sm:px-6"
+          >
             {/* All Categories Dropdown */}
-            <div className="relative" ref={catRef}>
+            <div className="relative flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setCatOpen((v) => !v)}
@@ -451,24 +473,38 @@ export default function Header() {
               </button>
 
               {catOpen && (
-                <div className="absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-lg">
-                  <Link
-                    href="/categories"
-                    className="flex items-center gap-2.5 border-b border-gray-100 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-[#1049C6] hover:bg-blue-50"
-                  >
-                    <LayoutGrid size={14} /> Browse All Categories
-                  </Link>
-                  {categories.map((cat) => (
+                <div className="absolute left-0 top-full z-50 mt-2 w-[520px] max-w-[90vw] rounded-2xl border border-gray-200 bg-white p-3 shadow-xl lg:w-[640px]">
+                  <div className="mb-2 flex items-center justify-between border-b border-gray-100 px-2 pb-2">
                     <Link
-                      key={cat.id}
-                      href={`/products?category=${cat.slug}`}
-                      className="block px-4 py-2 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-[#1049C6]"
+                      href="/categories"
+                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#1049C6] hover:underline"
                     >
-                      {cat.name}
+                      <LayoutGrid size={14} /> Browse All Categories ({categories.length})
                     </Link>
-                  ))}
-                  {categories.length === 0 && (
-                    <p className="px-4 py-3 text-xs text-gray-400">
+                  </div>
+                  {categories.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-1 lg:grid-cols-3">
+                      {categories.map((cat) => {
+                        const catHref = getCategoryHref(cat);
+                        const isActiveCat = pathname === catHref;
+                        return (
+                          <Link
+                            key={cat.id}
+                            href={catHref}
+                            onClick={() => setCatOpen(false)}
+                            className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                              isActiveCat
+                                ? "bg-blue-50 font-semibold text-[#1049C6]"
+                                : "text-gray-700 hover:bg-blue-50/70 hover:text-[#1049C6]"
+                            }`}
+                          >
+                            {cat.name}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="px-3 py-3 text-xs text-gray-400">
                       No categories yet
                     </p>
                   )}
@@ -476,19 +512,38 @@ export default function Header() {
               )}
             </div>
 
-            {/* Horizontal Nav Links */}
-            <nav className="flex flex-1 items-center gap-5 overflow-x-auto text-[13px] font-medium text-gray-700">
+            {/* Horizontal Nav Links (No scrolling — top categories + More button) */}
+            <nav className="flex flex-1 items-center gap-5 text-[13px] font-medium text-gray-700">
               {categories.length > 0 ? (
                 <>
-                  {categories.slice(0, 6).map((cat) => (
-                    <Link
-                      key={cat.id}
-                      href={`/products?category=${cat.slug}`}
-                      className="whitespace-nowrap transition hover:text-[#1049C6]"
+                  {categories.slice(0, 5).map((cat) => {
+                    const catHref = getCategoryHref(cat);
+                    const activeCat = pathname === catHref;
+                    return (
+                      <Link
+                        key={cat.id}
+                        href={catHref}
+                        className={`whitespace-nowrap transition hover:text-[#1049C6] ${
+                          activeCat ? "font-semibold text-[#1049C6]" : ""
+                        }`}
+                      >
+                        {cat.name}
+                      </Link>
+                    );
+                  })}
+                  {categories.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => setCatOpen((v) => !v)}
+                      className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-[#1049C6] transition hover:text-[#0B3BA8]"
                     >
-                      {cat.name}
-                    </Link>
-                  ))}
+                      More ({categories.length - 5}+)
+                      <ChevronDown
+                        size={13}
+                        className={`transition-transform ${catOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  )}
                 </>
               ) : (
                 FALLBACK_NAV.map((link) => (
@@ -571,15 +626,32 @@ export default function Header() {
                   <p className="mb-2 mt-4 px-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
                     Categories
                   </p>
-                  {categories.map((cat) => (
-                    <Link
-                      key={cat.id}
-                      href={`/products?category=${cat.slug}`}
-                      className="mb-1 flex items-center rounded-xl px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                    >
-                      {cat.name}
-                    </Link>
-                  ))}
+                  {categories.map((cat) => {
+                    const lowerName = cat.name.toLowerCase();
+                    const lowerSlug = cat.slug.toLowerCase();
+                    const isElectronics =
+                      lowerName === "electronics" ||
+                      lowerSlug.startsWith("electronics");
+                    const isHomeKitchen =
+                      lowerName === "home & kitchen" ||
+                      lowerName === "home and kitchen" ||
+                      lowerSlug.startsWith("home-kitchen") ||
+                      lowerSlug.startsWith("home-and-kitchen");
+                    const catHref = isElectronics
+                      ? "/categories/electronics"
+                      : isHomeKitchen
+                        ? "/categories/home-kitchen"
+                        : `/products?category=${cat.slug}`;
+                    return (
+                      <Link
+                        key={cat.id}
+                        href={catHref}
+                        className="mb-1 flex items-center rounded-xl px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                      >
+                        {cat.name}
+                      </Link>
+                    );
+                  })}
                 </>
               )}
 

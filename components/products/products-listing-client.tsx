@@ -17,8 +17,15 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import ProductCard, { type ProductCardData } from "@/components/ui/product-card";
+import ProductPlaceholderCard from "@/components/ui/product-placeholder-card";
 import QuickViewModal from "@/components/ui/quick-view-modal";
 import { SORT_OPTIONS } from "@/components/ui/product-filters";
+
+export type ActiveFilterChip = {
+  key: string;
+  label: string;
+  clearKeys?: string[];
+};
 
 interface ProductsListingClientProps {
   products: ProductCardData[];
@@ -27,6 +34,10 @@ interface ProductsListingClientProps {
   perPage: number;
   hasActiveFilters: boolean;
   searchQuery: string;
+  minVisualSlots?: number;
+  placeholderCategory?: string;
+  clearFiltersHref?: string;
+  activeFilterChips?: ActiveFilterChip[];
 }
 
 type ToastState = {
@@ -41,6 +52,10 @@ export default function ProductsListingClient({
   perPage,
   hasActiveFilters,
   searchQuery,
+  minVisualSlots = 0,
+  placeholderCategory,
+  clearFiltersHref = "/products",
+  activeFilterChips = [],
 }: ProductsListingClientProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -279,29 +294,83 @@ export default function ProductsListingClient({
         </div>
       </div>
 
-      {/* ── Product Grid / List ────────────────────────────────── */}
-      {products.length > 0 && (
-        <div
-          className={
-            viewMode === "grid"
-              ? "grid grid-cols-2 gap-3.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
-              : "space-y-4"
-          }
-        >
-          {products.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              viewMode={viewMode}
-              isWishlisted={wishlistedIds.has(product.id)}
-              wishlistPending={wishlistPendingId === product.id}
-              onToggleWishlist={handleToggleWishlist}
-              onQuickView={setQuickViewProduct}
-              onToast={showToast}
-            />
+      {/* ── Active Filter Chips ────────────────────────────────── */}
+      {activeFilterChips.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {activeFilterChips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={() => {
+                const keysToClear = chip.clearKeys ?? [chip.key];
+                const overrides: Record<string, string> = { page: "" };
+                keysToClear.forEach((k) => {
+                  overrides[k] = "";
+                });
+                pushParams(overrides);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-[#1049C6] transition hover:bg-blue-100"
+            >
+              <span>{chip.label}</span>
+              <X size={12} />
+            </button>
           ))}
+          <Link
+            href={clearFiltersHref}
+            className="text-xs font-semibold text-slate-500 underline-offset-2 transition hover:text-[#1049C6] hover:underline"
+          >
+            Clear all
+          </Link>
         </div>
       )}
+
+      {/* ── Product Grid / List (+ Smart Visual Placeholders) ──── */}
+      {(() => {
+        const showEmptyFiltered = products.length === 0 && hasActiveFilters;
+        const placeholderCount =
+          !showEmptyFiltered &&
+          currentPage === 1 &&
+          minVisualSlots > 0 &&
+          products.length < minVisualSlots
+            ? minVisualSlots - products.length
+            : 0;
+
+        if (products.length === 0 && placeholderCount === 0) {
+          return null;
+        }
+
+        return (
+          <div
+            className={
+              viewMode === "grid"
+                ? "grid grid-cols-2 gap-3.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
+                : "space-y-4"
+            }
+          >
+            {products.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                viewMode={viewMode}
+                isWishlisted={wishlistedIds.has(product.id)}
+                wishlistPending={wishlistPendingId === product.id}
+                onToggleWishlist={handleToggleWishlist}
+                onQuickView={setQuickViewProduct}
+                onToast={showToast}
+              />
+            ))}
+            {Array.from({ length: placeholderCount }).map((_, idx) => (
+              <ProductPlaceholderCard
+                key={`placeholder-${idx}`}
+                variant="default"
+                viewMode={viewMode}
+                category={placeholderCategory}
+                slotIndex={idx}
+              />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* ── Empty State (With Filters) ─────────────────────────── */}
       {products.length === 0 && hasActiveFilters && (
@@ -318,7 +387,7 @@ export default function ProductsListingClient({
               : "No products match your current filters. Try removing some filters to see more items."}
           </p>
           <Link
-            href="/products"
+            href={clearFiltersHref}
             className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#1049C6] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0B3BA8]"
           >
             Clear All Filters
@@ -327,7 +396,7 @@ export default function ProductsListingClient({
       )}
 
       {/* ── Empty State (No Products in Store) ─────────────────── */}
-      {products.length === 0 && !hasActiveFilters && (
+      {products.length === 0 && !hasActiveFilters && minVisualSlots === 0 && (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-20 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50">
             <Package size={28} className="text-[#1049C6]" />
