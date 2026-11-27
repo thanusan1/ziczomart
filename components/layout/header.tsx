@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Flame,
   LayoutGrid,
+  Heart,
 } from "lucide-react";
 
 type CategoryNav = {
@@ -44,6 +45,7 @@ export default function Header() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [cartCount, setCartCount] = useState(0);
+  const [wishlistCount, setWishlistCount] = useState(0);
   const [categories, setCategories] = useState<CategoryNav[]>([]);
 
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -91,23 +93,46 @@ export default function Header() {
         setEmail(null);
         setIsAdmin(false);
         setCartCount(0);
+        setWishlistCount(0);
       }
       setAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    async function handleCartOrWishlistEvent() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadProfileAndCart(supabase, session.user.id);
+      }
+    }
+
+    window.addEventListener("ziczomart:cart-updated", handleCartOrWishlistEvent);
+    window.addEventListener("ziczomart:wishlist-updated", handleCartOrWishlistEvent);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("ziczomart:cart-updated", handleCartOrWishlistEvent);
+      window.removeEventListener("ziczomart:wishlist-updated", handleCartOrWishlistEvent);
+    };
   }, []);
 
   async function loadProfileAndCart(
     supabase: ReturnType<typeof createClient>,
     userId: string,
   ) {
-    const [{ data: profile }, { data: cart }] = await Promise.all([
-      supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
-      supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
-    ]);
+    const [{ data: profile }, { data: cart }, { count: wishCount }] =
+      await Promise.all([
+        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
+        supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
+        supabase
+          .from("wishlists")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId),
+      ]);
 
     setIsAdmin(profile?.role === "admin");
+    setWishlistCount(wishCount ?? 0);
 
     if (cart) {
       const { count } = await supabase
@@ -340,13 +365,21 @@ export default function Header() {
                 </div>
               ))}
 
-            {/* Orders quick link (desktop) */}
+            {/* Wishlist */}
             <Link
-              href="/account/orders"
-              className="hidden items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-[#1049C6] lg:flex"
+              href="/products?wishlist=true"
+              aria-label={`Wishlist${wishlistCount > 0 ? `, ${wishlistCount} items` : ""}`}
+              className="relative hidden items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-[#1049C6] sm:flex"
             >
-              <Package size={18} className="text-gray-600" />
-              <span>Orders</span>
+              <div className="relative">
+                <Heart size={18} className="text-gray-600" />
+                {wishlistCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1049C6] px-1 text-[10px] font-bold text-white">
+                    {wishlistCount > 9 ? "9+" : wishlistCount}
+                  </span>
+                )}
+              </div>
+              <span>Wishlist</span>
             </Link>
 
             {/* Cart */}
@@ -472,7 +505,7 @@ export default function Header() {
               )}
 
               <Link
-                href="/products"
+                href="/products?deals=true"
                 className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-[#0A1633] transition hover:text-[#1049C6]"
               >
                 <Flame size={14} className="text-red-500" />

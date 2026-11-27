@@ -20,7 +20,7 @@ export default function Breadcrumb({ items, className }: BreadcrumbProps) {
     >
       <Link
         href="/"
-        className="flex items-center gap-1 text-gray-400 transition hover:text-orange-500"
+        className="flex items-center gap-1 text-gray-400 transition hover:text-[#1049C6]"
       >
         <Home size={13} />
       </Link>
@@ -32,11 +32,11 @@ export default function Breadcrumb({ items, className }: BreadcrumbProps) {
           <span key={index} className="flex items-center gap-1">
             <ChevronRight size={13} className="text-gray-300" />
             {isLast || !item.href ? (
-              <span className="font-medium text-gray-700">{item.label}</span>
+              <span className="font-medium text-[#0A1633]">{item.label}</span>
             ) : (
               <Link
                 href={item.href}
-                className="text-gray-400 transition hover:text-orange-500"
+                className="text-gray-400 transition hover:text-[#1049C6]"
               >
                 {item.label}
               </Link>

@@ -10,15 +10,25 @@ interface Props {
   productId: string;
   stockQuantity: number;
   slug: string;
+  onSuccess?: (message: string) => void;
+  onError?: (message: string) => void;
 }
 
-export default function CardAddToCart({ productId, stockQuantity, slug }: Props) {
+export default function CardAddToCart({
+  productId,
+  stockQuantity,
+  slug,
+  onSuccess,
+  onError,
+}: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [added, setAdded] = useState(false);
   const [error, setError] = useState("");
+  const isOutOfStock = stockQuantity <= 0;
 
   async function handleAdd() {
+    if (isOutOfStock) return;
     setLoading(true);
     setError("");
 
@@ -81,10 +91,14 @@ export default function CardAddToCart({ productId, stockQuantity, slug }: Props)
       }
 
       setAdded(true);
+      window.dispatchEvent(new CustomEvent("ziczomart:cart-updated"));
+      onSuccess?.("Added to cart");
       router.refresh();
       setTimeout(() => setAdded(false), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add to cart.");
+      const msg = err instanceof Error ? err.message : "Could not add to cart.";
+      setError(msg);
+      onError?.(msg);
     } finally {
       setLoading(false);
     }
@@ -95,11 +109,13 @@ export default function CardAddToCart({ productId, stockQuantity, slug }: Props)
       <button
         type="button"
         onClick={handleAdd}
-        disabled={loading || added}
+        disabled={loading || added || isOutOfStock}
         className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 disabled:cursor-not-allowed ${
-          added
-            ? "bg-emerald-600 text-white"
-            : "bg-[#1049C6] text-white hover:bg-[#0B3BA8]"
+          isOutOfStock
+            ? "bg-gray-100 text-gray-400"
+            : added
+              ? "bg-emerald-600 text-white"
+              : "bg-[#1049C6] text-white hover:bg-[#0B3BA8]"
         } disabled:opacity-80`}
       >
         {loading ? (
@@ -109,10 +125,16 @@ export default function CardAddToCart({ productId, stockQuantity, slug }: Props)
         ) : (
           <ShoppingCart size={13} />
         )}
-        {loading ? "Adding…" : added ? "Added!" : "Add to Cart"}
+        {isOutOfStock
+          ? "Out of Stock"
+          : loading
+            ? "Adding…"
+            : added
+              ? "Added!"
+              : "Add to Cart"}
       </button>
 
-      {error && (
+      {error && !onError && (
         <p className="mt-1.5 text-center text-[10px] text-red-500">{error}</p>
       )}
     </div>
